@@ -30,7 +30,7 @@ if uploaded_files:
     values = []
 
     for file in uploaded_files:
-        pages = convert_from_bytes(file.read(), dpi=300)
+        pages = convert_from_bytes(file.read(), dpi=150)
         img = np.array(pages[0])
 
         # Originalseite als PIL-Bild
