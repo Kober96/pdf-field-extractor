@@ -37,34 +37,52 @@ optionen = [
 ]
 
 if uploaded_files:
-    images = []
+    entries = []
     values = []
 
-    # PDFs einlesen und Feld ausschneiden
     for file in uploaded_files:
         try:
             pages = convert_from_bytes(file.read(), dpi=300)
             img = np.array(pages[0])
 
-            # Koordinaten deines Feldes
-            roi = img[900:1400, 2000:2300]
+            # Original-Koordinaten für normal ausgerichtetes Blatt
+            y1, y2 = 900, 1400
+            x1, x2 = 2000, 2300
 
-            # Prüfung, ob der Ausschnitt leer ist
-            if roi.size == 0:
-                st.error(f"Ausschnitt bei Datei {file.name} ist leer. Bitte Koordinaten prüfen.")
+            # Bildhöhe und Bildbreite bestimmen
+            h_img, w_img = img.shape[:2]
+
+            # Variante 1: normale Position
+            roi_normal = img[y1:y2, x1:x2]
+
+            if roi_normal.size == 0:
+                st.error(f"Ausschnitt NORMAL bei Datei {file.name} ist leer. Bitte Koordinaten prüfen.")
                 st.stop()
 
-            cropped = Image.fromarray(roi)
+            cropped_normal = Image.fromarray(roi_normal).convert("RGB")
+            cropped_normal = cropped_normal.rotate(90, expand=True)
 
-            # Wichtig: RGB erzwingen, verhindert Streamlit/PIL-Bildfehler
-            cropped = cropped.convert("RGB")
+            # Variante 2: Position, falls Blatt um 180° verdreht ist
+            y1_180 = h_img - y2
+            y2_180 = h_img - y1
+            x1_180 = w_img - x2
+            x2_180 = w_img - x1
 
-            # 90° nach links drehen
-            cropped = cropped.rotate(90, expand=True)
+            roi_180 = img[y1_180:y2_180, x1_180:x2_180]
 
-            images.append({
+            if roi_180.size == 0:
+                st.error(f"Ausschnitt 180° bei Datei {file.name} ist leer. Bitte Koordinaten prüfen.")
+                st.stop()
+
+            cropped_180 = Image.fromarray(roi_180).convert("RGB")
+
+            # Damit der zweite Ausschnitt lesbar angezeigt wird
+            cropped_180 = cropped_180.rotate(270, expand=True)
+
+            entries.append({
                 "datei": file.name,
-                "bild": cropped
+                "normal": cropped_normal,
+                "gedreht_180": cropped_180
             })
 
         except Exception as e:
@@ -74,21 +92,28 @@ if uploaded_files:
 
     st.subheader("Einträge prüfen und zuordnen")
 
-    # Manuelle Zuordnung
-    for i, item in enumerate(images):
-        st.write(f"**Eintrag {i+1}: {item['datei']}**")
+    for i, entry in enumerate(entries):
+        st.write(f"**Eintrag {i+1}: {entry['datei']}**")
 
-        col1, col2 = st.columns([1, 2])
+        col1, col2, col3 = st.columns([1, 1, 2])
 
         with col1:
             st.image(
-                item["bild"],
-                caption="Ausschnitt",
-                width=220,
+                entry["normal"],
+                caption="Variante 1",
+                width=180,
                 output_format="PNG"
             )
 
         with col2:
+            st.image(
+                entry["gedreht_180"],
+                caption="Variante 2 bei 180°",
+                width=180,
+                output_format="PNG"
+            )
+
+        with col3:
             auswahl = st.selectbox(
                 "Kürzel / Name auswählen",
                 optionen,
@@ -103,9 +128,8 @@ if uploaded_files:
 
             values.append(auswahl)
 
-    # Leere Werte entfernen
+    # Häufigkeiten
     filtered_values = [v for v in values if v != ""]
-
     counts = Counter(filtered_values)
 
     count_df = pd.DataFrame(
@@ -118,14 +142,13 @@ if uploaded_files:
 
     # Detailtabelle
     detail_df = pd.DataFrame({
-        "Datei": [item["datei"] for item in images],
+        "Datei": [entry["datei"] for entry in entries],
         "Zugeordneter Wert": values
     })
 
     st.subheader("Detailauswertung")
     st.dataframe(detail_df, use_container_width=True)
 
-    # Speicher etwas freigeben
     gc.collect()
 
     # PDF erstellen
@@ -135,42 +158,55 @@ if uploaded_files:
     page_width, page_height = A4
     y = page_height - 50
 
-    for i, item in enumerate(images):
-        img = item["bild"]
+    for i, entry in enumerate(entries):
+        img_normal = entry["normal"]
+        img_180 = entry["gedreht_180"]
 
-        w, h = img.size
-        new_width = 150
-        new_height = new_width * (h / w)
+        new_width = 130
 
-        # Neue Seite, falls nicht genug Platz
-        if y - new_height < 80:
+        w1, h1 = img_normal.size
+        new_height_1 = new_width * (h1 / w1)
+
+        w2, h2 = img_180.size
+        new_height_2 = new_width * (h2 / w2)
+
+        max_height = max(new_height_1, new_height_2)
+
+        if y - max_height < 100:
             c.showPage()
             y = page_height - 50
 
-        c.drawString(50, y, f"Eintrag {i+1}: {item['datei']}")
+        c.drawString(50, y, f"Eintrag {i+1}: {entry['datei']}")
+        c.drawString(350, y, f"Auswertung: {values[i]}")
         y -= 20
 
-        c.drawString(220, y + 5, f"Auswertung: {values[i]}")
-
+        c.drawString(50, y, "Variante 1")
         c.drawInlineImage(
-            img,
+            img_normal,
             50,
-            y - new_height,
+            y - new_height_1 - 15,
             width=new_width,
-            height=new_height
+            height=new_height_1
         )
 
-        y -= (new_height + 40)
+        c.drawString(220, y, "Variante 2 bei 180 Grad")
+        c.drawInlineImage(
+            img_180,
+            220,
+            y - new_height_2 - 15,
+            width=new_width,
+            height=new_height_2
+        )
+
+        y -= (max_height + 70)
 
     c.save()
-
     pdf_bytes = buffer.getvalue()
 
     # PDF-Vorschau vor Download
     st.subheader("Vorschau der fertigen PDF")
 
     try:
-        # Niedrige DPI + nur erste Seite = stabiler auf Streamlit Cloud
         pdf_preview = convert_from_bytes(pdf_bytes, dpi=80)
 
         if len(pdf_preview) > 0:
