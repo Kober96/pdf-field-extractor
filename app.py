@@ -17,12 +17,12 @@ uploaded_files = st.file_uploader(
     accept_multiple_files=True
 )
 
-# Sicherheitslimit gegen Streamlit-Abstürze
+# Limit gegen Absturz
 if uploaded_files and len(uploaded_files) > 15:
-    st.error("Bitte maximal 15 PDFs gleichzeitig hochladen.")
+    st.error("Maximal 15 PDFs gleichzeitig laden")
     st.stop()
 
-# Bekannte Kürzel/Namen
+# Auswahloptionen
 optionen = [
     "",
     "Andreas Bayer",
@@ -36,277 +36,168 @@ optionen = [
     "Andere"
 ]
 
-# Koordinaten deines Feldes im korrekt ausgerichteten Dokument
+# Ausgangskoordinaten
 Y1, Y2 = 900, 1400
 X1, X2 = 2000, 2300
-
-def crop_field(page_img, correction_angle, offset_x=0, offset_y=0):
-    """
-    Dreht die komplette Seite und verschiebt danach optional den Ausschnitt.
-    offset_x = Verschiebung nach rechts in Pixeln
-    offset_y = Verschiebung nach unten in Pixeln
-    """
-
-    rotated_page = page_img.rotate(correction_angle, expand=True)
-    img_array = np.array(rotated_page)
-
-    h_img, w_img = img_array.shape[:2]
-
-    # Koordinaten mit optionaler Verschiebung
-    y1 = Y1 + offset_y
-    y2 = Y2 + offset_y
-    x1 = X1 + offset_x
-    x2 = X2 + offset_x
-
-    # Sicherheitsbegrenzung
-    y1 = max(0, min(y1, h_img))
-    y2 = max(0, min(y2, h_img))
-    x1 = max(0, min(x1, w_img))
-    x2 = max(0, min(x2, w_img))
-
-    roi = img_array[y1:y2, x1:x2]
-
-    if roi.size == 0:
-        return None
-
-    cropped = Image.fromarray(roi).convert("RGB")
-
-    # Ausschnitt lesbar drehen
-    cropped = cropped.rotate(90, expand=True)
-
-    return cropped
 
 if uploaded_files:
     entries = []
     values = []
 
     for file in uploaded_files:
-        try:
-            pages = convert_from_bytes(file.read(), dpi=300)
-            img = np.array(pages[0])
-            page_img = Image.fromarray(img).convert("RGB")
+        pages = convert_from_bytes(file.read(), dpi=300)
+        img = np.array(pages[0])
+        h_img, w_img = img.shape[:2]
 
-            # Variante 1: Dokument ist normal
-            variant_normal = crop_field(page_img, 0)
+        page_img = Image.fromarray(img).convert("RGB")
 
-            # Variante 2: Dokument ist 180° verdreht
-            variant_180 = crop_field(page_img, 180)
+        # ✅ NORMAL
+        roi_normal = img[Y1:Y2, X1:X2]
+        cropped_normal = Image.fromarray(roi_normal).convert("RGB").rotate(90, expand=True)
 
-            # Variante 3: Dokument ist 90° nach rechts gedreht
-            # Korrektur: Seite 90° nach links drehen
-            variant_90_rechts = crop_field(page_img, 90)
+        # ✅ 180° (Koordinaten spiegeln)
+        y1_180 = h_img - Y2
+        y2_180 = h_img - Y1
+        x1_180 = w_img - X2
+        x2_180 = w_img - X1
 
-            # Variante 4: Dokument ist 90° nach links gedreht
-            # Korrektur: Seite 90° nach rechts drehen
-            variant_90_links = crop_field(page_img, -90)
+        roi_180 = img[y1_180:y2_180, x1_180:x2_180]
+        cropped_180 = Image.fromarray(roi_180).convert("RGB").rotate(270, expand=True)
 
-            if variant_normal is None and variant_180 is None and variant_90_rechts is None and variant_90_links is None:
-                st.error(f"Bei Datei {file.name} konnte kein gültiger Ausschnitt erzeugt werden. Bitte Koordinaten prüfen.")
-                st.stop()
+        # ✅ 90° rechts
+        img_90r = np.array(page_img.rotate(90, expand=True))
+        roi_90r = img_90r[Y1:Y2, X1:X2]
+        cropped_90r = Image.fromarray(roi_90r).convert("RGB").rotate(90, expand=True)
 
-            entries.append({
-                "datei": file.name,
-                "normal": variant_normal,
-                "gedreht_180": variant_180,
-                "gedreht_90_rechts": variant_90_rechts,
-                "gedreht_90_links": variant_90_links
-            })
+        # ✅ 90° links + Verschiebung
+        img_90l = np.array(page_img.rotate(-90, expand=True))
 
-        except Exception as e:
-            st.error(f"Fehler beim Verarbeiten von {file.name}")
-            st.exception(e)
-            st.stop()
+        # Verschiebung (60px rechts, 250px runter)
+        y1_90l = Y1 + 250
+        y2_90l = Y2 + 250
+        x1_90l = X1 + 60
+        x2_90l = X2 + 60
 
-    st.subheader("Einträge prüfen und zuordnen")
+        roi_90l = img_90l[y1_90l:y2_90l, x1_90l:x2_90l]
+        cropped_90l = Image.fromarray(roi_90l).convert("RGB").rotate(90, expand=True)
+
+        entries.append({
+            "datei": file.name,
+            "normal": cropped_normal,
+            "rot180": cropped_180,
+            "rot90r": cropped_90r,
+            "rot90l": cropped_90l
+        })
+
+    st.subheader("Einträge prüfen")
 
     for i, entry in enumerate(entries):
         st.write(f"**Eintrag {i+1}: {entry['datei']}**")
 
-        col1, col2, col3, col4, col5 = st.columns([1, 1, 1, 1, 2])
+        col1, col2, col3, col4, col5 = st.columns([1,1,1,1,2])
 
         with col1:
-            if entry["normal"] is not None:
-                st.image(
-                    entry["normal"],
-                    caption="Normal",
-                    width=140,
-                    output_format="PNG"
-                )
-            else:
-                st.warning("Kein Bild")
+            st.image(entry["normal"], caption="Normal", width=150)
 
         with col2:
-            if entry["gedreht_180"] is not None:
-                st.image(
-                    entry["gedreht_180"],
-                    caption="180°",
-                    width=140,
-                    output_format="PNG"
-                )
-            else:
-                st.warning("Kein Bild")
+            st.image(entry["rot180"], caption="180°", width=150)
 
         with col3:
-            if entry["gedreht_90_rechts"] is not None:
-                st.image(
-                    entry["gedreht_90_rechts"],
-                    caption="90° rechts",
-                    width=140,
-                    output_format="PNG"
-                )
-            else:
-                st.warning("Kein Bild")
+            st.image(entry["rot90r"], caption="90° rechts", width=150)
 
         with col4:
-            if entry["gedreht_90_links"] is not None:
-                st.image(
-                    entry["gedreht_90_links"],
-                    caption="90° links",
-                    width=140,
-                    output_format="PNG"
-                )
-            else:
-                st.warning("Kein Bild")
+            st.image(entry["rot90l"], caption="90° links", width=150)
 
         with col5:
-            auswahl = st.selectbox(
-                "Kürzel / Name auswählen",
+            val = st.selectbox(
+                "Name auswählen",
                 optionen,
-                key=f"select_{i}"
+                key=f"sel_{i}"
             )
 
-            if auswahl == "Andere":
-                auswahl = st.text_input(
-                    "Anderen Wert eingeben",
-                    key=f"other_{i}"
-                )
+            if val == "Andere":
+                val = st.text_input("Eingabe", key=f"txt_{i}")
 
-            values.append(auswahl)
+            values.append(val)
 
-    # Häufigkeiten
-    filtered_values = [v for v in values if v != ""]
-    counts = Counter(filtered_values)
+    # ✅ Auswertung
+    filtered = [v for v in values if v != ""]
+    counts = Counter(filtered)
 
-    count_df = pd.DataFrame(
-        counts.items(),
-        columns=["Kürzel / Name", "Häufigkeit"]
-    ).sort_values(by="Häufigkeit", ascending=False)
+    df = pd.DataFrame(counts.items(), columns=["Name", "Häufigkeit"])
+    df = df.sort_values(by="Häufigkeit", ascending=False)
 
     st.subheader("Häufigkeiten")
-    st.dataframe(count_df, use_container_width=True)
+    st.dataframe(df)
 
-    # Detailtabelle
-    detail_df = pd.DataFrame({
-        "Datei": [entry["datei"] for entry in entries],
-        "Zugeordneter Wert": values
-    })
-
-    st.subheader("Detailauswertung")
-    st.dataframe(detail_df, use_container_width=True)
-
+    # ✅ PDF erzeugen
     gc.collect()
 
-    # PDF erstellen
     buffer = io.BytesIO()
     c = canvas.Canvas(buffer, pagesize=A4)
 
-    page_width, page_height = A4
-    y = page_height - 50
+    width, height = A4
+    y = height - 50
 
     for i, entry in enumerate(entries):
 
-        variants = [
-            ("Normal", entry["normal"]),
-            ("180 Grad", entry["gedreht_180"]),
-            ("90 Grad rechts", entry["gedreht_90_rechts"]),
-            ("90 Grad links", entry["gedreht_90_links"])
+        imgs = [
+            entry["normal"],
+            entry["rot180"],
+            entry["rot90r"],
+            entry["rot90l"]
         ]
 
-        valid_variants = [(label, img) for label, img in variants if img is not None]
-
-        new_width = 90
+        new_w = 90
         heights = []
 
-        for label, img in valid_variants:
+        for img in imgs:
             w, h = img.size
-            heights.append(new_width * (h / w))
+            heights.append(new_w * (h / w))
 
-        max_height = max(heights) if heights else 100
+        max_h = max(heights)
 
-        if y - max_height < 120:
+        if y - max_h < 100:
             c.showPage()
-            y = page_height - 50
+            y = height - 50
 
-        c.drawString(50, y, f"Eintrag {i+1}: {entry['datei']}")
-        c.drawString(350, y, f"Auswertung: {values[i]}")
+        c.drawString(50, y, f"{entry['datei']}")
+        c.drawString(350, y, f"{values[i]}")
         y -= 20
 
-        x_positions = [50, 160, 270, 380]
+        x_pos = [50, 150, 250, 350]
 
-        for idx, (label, img) in enumerate(valid_variants):
+        for idx, img in enumerate(imgs):
             w, h = img.size
-            new_height = new_width * (h / w)
+            h_new = new_w * (h / w)
 
-            x_pos = x_positions[idx]
-
-            c.drawString(x_pos, y, label)
             c.drawInlineImage(
                 img,
-                x_pos,
-                y - new_height - 15,
-                width=new_width,
-                height=new_height
+                x_pos[idx],
+                y - h_new,
+                width=new_w,
+                height=h_new
             )
 
-        y -= (max_height + 70)
+        y -= (max_h + 60)
 
     c.save()
+
     pdf_bytes = buffer.getvalue()
 
-    # PDF-Vorschau vor Download
-    st.subheader("Vorschau der fertigen PDF")
+    # ✅ Vorschau (stabil)
+    st.subheader("Vorschau")
 
     try:
-        pdf_preview = convert_from_bytes(pdf_bytes, dpi=80)
+        preview = convert_from_bytes(pdf_bytes, dpi=80)
+        st.image(preview[0], use_column_width=True)
+    except:
+        st.warning("Vorschau nicht möglich")
 
-        if len(pdf_preview) > 0:
-            st.image(
-                pdf_preview[0],
-                caption="Vorschau Seite 1",
-                use_column_width=True,
-                output_format="PNG"
-            )
-
-        if len(pdf_preview) > 1:
-            st.info("Es wird aus Stabilitätsgründen nur die erste Seite als Vorschau angezeigt. Die heruntergeladene PDF enthält alle Seiten.")
-
-    except Exception:
-        st.warning("Die PDF-Vorschau konnte nicht erzeugt werden. Der Download funktioniert trotzdem.")
-
-    # PDF Download
-    st.download_button(
-        "PDF herunterladen",
-        pdf_bytes,
-        "ergebnis.pdf",
-        "application/pdf"
-    )
-
-    # CSV Detailauswertung
-    detail_csv = detail_df.to_csv(index=False).encode("utf-8-sig")
+    st.download_button("PDF herunterladen", pdf_bytes)
 
     st.download_button(
-        "Detailauswertung als CSV herunterladen",
-        detail_csv,
-        "detailauswertung.csv",
-        "text/csv"
-    )
-
-    # CSV Häufigkeiten
-    count_csv = count_df.to_csv(index=False).encode("utf-8-sig")
-
-    st.download_button(
-        "Häufigkeiten als CSV herunterladen",
-        count_csv,
-        "haeufigkeiten.csv",
-        "text/csv"
+        "CSV herunterladen",
+        df.to_csv(index=False).encode("utf-8"),
+        "auswertung.csv"
     )
