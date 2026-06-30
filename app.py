@@ -75,7 +75,7 @@ if uploaded_files:
         # Verschiebung (60px rechts, 250px runter)
         y1_90l = Y1 + 150
         y2_90l = Y2 + 250
-        x1_90l = X1 + -350
+        x1_90l = X1 + -300
         x2_90l = X2 + -250
 
         roi_90l = img_90l[y1_90l:y2_90l, x1_90l:x2_90l]
