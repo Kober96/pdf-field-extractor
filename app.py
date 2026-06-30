@@ -73,10 +73,10 @@ if uploaded_files:
         img_90l = np.array(page_img.rotate(-90, expand=True))
 
         # Verschiebung (60px rechts, 250px runter)
-        y1_90l = Y1 + 250
-        y2_90l = Y2 + 250
-        x1_90l = X1 + 60
-        x2_90l = X2 + 60
+        y1_90l = Y1 + 300
+        y2_90l = Y2 + 300
+        x1_90l = X1 + 30
+        x2_90l = X2 + 30
 
         roi_90l = img_90l[y1_90l:y2_90l, x1_90l:x2_90l]
         cropped_90l = Image.fromarray(roi_90l).convert("RGB").rotate(90, expand=True)
