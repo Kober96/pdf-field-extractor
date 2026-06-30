@@ -7,7 +7,6 @@ from reportlab.lib.pagesizes import A4
 import io
 import pandas as pd
 from collections import Counter
-import gc
 
 st.title("Feld-Extractor mit manueller Auswertung")
 
@@ -17,12 +16,7 @@ uploaded_files = st.file_uploader(
     accept_multiple_files=True
 )
 
-# Limit gegen Absturz
-if uploaded_files and len(uploaded_files) > 15:
-    st.error("Maximal 15 PDFs gleichzeitig laden")
-    st.stop()
-
-# Auswahloptionen
+# Hier kannst du deine bekannten Kürzel/Namen eintragen
 optionen = [
     "",
     "Andreas Bayer",
@@ -36,168 +30,148 @@ optionen = [
     "Andere"
 ]
 
-# Ausgangskoordinaten
-Y1, Y2 = 800, 1300
-X1, X2 = 1900, 2200
-
 if uploaded_files:
-    entries = []
+    images = []
     values = []
 
+    # PDFs einlesen und Feld ausschneiden
     for file in uploaded_files:
         pages = convert_from_bytes(file.read(), dpi=300)
         img = np.array(pages[0])
-        h_img, w_img = img.shape[:2]
 
-        page_img = Image.fromarray(img).convert("RGB")
+        # Koordinaten deines Feldes
+        roi = img[900:1400, 2000:2300]
 
-        # ✅ NORMAL
-        roi_normal = img[Y1:Y2, X1:X2]
-        cropped_normal = Image.fromarray(roi_normal).convert("RGB").rotate(90, expand=True)
+        cropped = Image.fromarray(roi)
 
-        # ✅ 180° (Koordinaten spiegeln)
-        y1_180 = h_img - Y2
-        y2_180 = h_img - Y1
-        x1_180 = w_img - X2
-        x2_180 = w_img - X1
+        # 90° nach links drehen
+        cropped = cropped.rotate(90, expand=True)
 
-        roi_180 = img[y1_180:y2_180, x1_180:x2_180]
-        cropped_180 = Image.fromarray(roi_180).convert("RGB").rotate(270, expand=True)
-
-        # ✅ 90° rechts
-        img_90r = np.array(page_img.rotate(90, expand=True))
-        roi_90r = img_90r[Y1:Y2, X1:X2]
-        cropped_90r = Image.fromarray(roi_90r).convert("RGB").rotate(90, expand=True)
-
-        # ✅ 90° links + Verschiebung
-        img_90l = np.array(page_img.rotate(-90, expand=True))
-
-        # Verschiebung
-        y1_90l = Y1 + 150
-        y2_90l = Y2 + 250
-        x1_90l = X1 + -200
-        x2_90l = X2 + -100
-
-        roi_90l = img_90l[y1_90l:y2_90l, x1_90l:x2_90l]
-        cropped_90l = Image.fromarray(roi_90l).convert("RGB").rotate(90, expand=True)
-
-        entries.append({
+        images.append({
             "datei": file.name,
-            "normal": cropped_normal,
-            "rot180": cropped_180,
-            "rot90r": cropped_90r,
-            "rot90l": cropped_90l
+            "bild": cropped
         })
 
-    st.subheader("Einträge prüfen")
+    st.subheader("Einträge prüfen und zuordnen")
 
-    for i, entry in enumerate(entries):
-        st.write(f"**Eintrag {i+1}: {entry['datei']}**")
+    # Manuelle Zuordnung
+    for i, item in enumerate(images):
+        st.write(f"**Eintrag {i+1}: {item['datei']}**")
 
-        col1, col2, col3, col4, col5 = st.columns([1,1,1,1,2])
+        col1, col2 = st.columns([1, 2])
 
         with col1:
-            st.image(entry["normal"], caption="Normal", width=150)
+            st.image(item["bild"], caption="Ausschnitt", width=220)
 
         with col2:
-            st.image(entry["rot180"], caption="180°", width=150)
-
-        with col3:
-            st.image(entry["rot90r"], caption="90° rechts", width=150)
-
-        with col4:
-            st.image(entry["rot90l"], caption="90° links", width=150)
-
-        with col5:
-            val = st.selectbox(
-                "Name auswählen",
+            auswahl = st.selectbox(
+                "Kürzel / Name auswählen",
                 optionen,
-                key=f"sel_{i}"
+                key=f"select_{i}"
             )
 
-            if val == "Andere":
-                val = st.text_input("Eingabe", key=f"txt_{i}")
+            if auswahl == "Andere":
+                auswahl = st.text_input(
+                    "Anderen Wert eingeben",
+                    key=f"other_{i}"
+                )
 
-            values.append(val)
+            values.append(auswahl)
 
-    # ✅ Auswertung
-    filtered = [v for v in values if v != ""]
-    counts = Counter(filtered)
+    # Leere Werte entfernen
+    filtered_values = [v for v in values if v != ""]
 
-    df = pd.DataFrame(counts.items(), columns=["Name", "Häufigkeit"])
-    df = df.sort_values(by="Häufigkeit", ascending=False)
+    counts = Counter(filtered_values)
+
+    count_df = pd.DataFrame(
+        counts.items(),
+        columns=["Kürzel / Name", "Häufigkeit"]
+    ).sort_values(by="Häufigkeit", ascending=False)
 
     st.subheader("Häufigkeiten")
-    st.dataframe(df)
 
-    # ✅ PDF erzeugen
-    gc.collect()
+    st.dataframe(count_df, use_container_width=True)
 
+    # Detailtabelle
+    detail_df = pd.DataFrame({
+        "Datei": [item["datei"] for item in images],
+        "Zugeordneter Wert": values
+    })
+
+    st.subheader("Detailauswertung")
+
+    st.dataframe(detail_df, use_container_width=True)
+
+    # PDF erstellen
     buffer = io.BytesIO()
     c = canvas.Canvas(buffer, pagesize=A4)
 
-    width, height = A4
-    y = height - 50
+    page_width, page_height = A4
+    y = page_height - 50
 
-    for i, entry in enumerate(entries):
+    for i, item in enumerate(images):
+        img = item["bild"]
 
-        imgs = [
-            entry["normal"],
-            entry["rot180"],
-            entry["rot90r"],
-            entry["rot90l"]
-        ]
+        w, h = img.size
+        new_width = 150
+        new_height = new_width * (h / w)
 
-        new_w = 90
-        heights = []
-
-        for img in imgs:
-            w, h = img.size
-            heights.append(new_w * (h / w))
-
-        max_h = max(heights)
-
-        if y - max_h < 100:
+        # Neue Seite, falls nicht genug Platz
+        if y - new_height < 80:
             c.showPage()
-            y = height - 50
+            y = page_height - 50
 
-        c.drawString(50, y, f"{entry['datei']}")
-        c.drawString(350, y, f"{values[i]}")
+        c.drawString(50, y, f"Eintrag {i+1}: {item['datei']}")
         y -= 20
 
-        x_pos = [50, 150, 250, 350]
+        c.drawString(220, y + 5, f"Auswertung: {values[i]}")
 
-        for idx, img in enumerate(imgs):
-            w, h = img.size
-            h_new = new_w * (h / w)
+        c.drawInlineImage(
+            img,
+            50,
+            y - new_height,
+            width=new_width,
+            height=new_height
+        )
 
-            c.drawInlineImage(
-                img,
-                x_pos[idx],
-                y - h_new,
-                width=new_w,
-                height=h_new
-            )
-
-        y -= (max_h + 60)
+        y -= (new_height + 40)
 
     c.save()
 
     pdf_bytes = buffer.getvalue()
 
-    # ✅ Vorschau
-    st.subheader("Vorschau")
+    # PDF-Vorschau vor Download
+    st.subheader("Vorschau der fertigen PDF")
 
-    try:
-        preview = convert_from_bytes(pdf_bytes, dpi=80)
-        st.image(preview[0], use_column_width=True)
-    except:
-        st.warning("Vorschau nicht möglich")
+    pdf_preview = convert_from_bytes(pdf_bytes, dpi=150)
 
-    st.download_button("PDF herunterladen", pdf_bytes)
+    for i, page in enumerate(pdf_preview):
+        st.image(page, caption=f"Seite {i+1}", use_column_width=True)
+
+    # PDF Download
+    st.download_button(
+        "PDF herunterladen",
+        pdf_bytes,
+        "ergebnis.pdf",
+        "application/pdf"
+    )
+
+    # CSV Detailauswertung
+    detail_csv = detail_df.to_csv(index=False).encode("utf-8-sig")
 
     st.download_button(
-        "CSV herunterladen",
-        df.to_csv(index=False).encode("utf-8"),
-        "auswertung.csv"
+        "Detailauswertung als CSV herunterladen",
+        detail_csv,
+        "detailauswertung.csv",
+        "text/csv"
+    )
+
+    # CSV Häufigkeiten
+    count_csv = count_df.to_csv(index=False).encode("utf-8-sig")
+
+    st.download_button(
+        "Häufigkeiten als CSV herunterladen",
+        count_csv,
+        "haeufigkeiten.csv",
+        "text/csv"
     )
