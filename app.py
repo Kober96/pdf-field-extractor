@@ -1,16 +1,14 @@
 import streamlit as st
 from pdf2image import convert_from_bytes
-from PIL import Image, ImageOps
+from PIL import Image
 import numpy as np
 from reportlab.pdfgen import canvas
 from reportlab.lib.pagesizes import A4
 import io
-import pytesseract
 import pandas as pd
 from collections import Counter
-import re
 
-st.title("Feld-Extractor mit Auswertung")
+st.title("Feld-Extractor mit manueller Auswertung")
 
 uploaded_files = st.file_uploader(
     "PDFs hochladen",
@@ -18,25 +16,20 @@ uploaded_files = st.file_uploader(
     accept_multiple_files=True
 )
 
-def clean_text(text):
-    text = text.strip()
-    text = text.replace("\n", " ")
-    text = re.sub(r"[^A-Za-zÄÖÜäöüß0-9.\- ]", "", text)
-    text = re.sub(r"\s+", " ", text)
-    return text.strip()
-
-def prepare_for_ocr(image):
-    gray = ImageOps.grayscale(image)
-    gray = ImageOps.autocontrast(gray)
-
-    # einfacher Kontrastfilter
-    bw = gray.point(lambda x: 0 if x < 160 else 255, "1")
-    return bw
+# Hier kannst du deine bekannten Kürzel/Namen eintragen
+optionen = [
+    "",
+    "Schu",
+    "Pothig S.",
+    "Unklar",
+    "Andere"
+]
 
 if uploaded_files:
     images = []
-    results = []
+    values = []
 
+    # PDFs einlesen und Feld ausschneiden
     for file in uploaded_files:
         pages = convert_from_bytes(file.read(), dpi=300)
         img = np.array(pages[0])
@@ -49,59 +42,39 @@ if uploaded_files:
         # 90° nach links drehen
         cropped = cropped.rotate(90, expand=True)
 
-        # Bild speichern für PDF
         images.append({
             "datei": file.name,
             "bild": cropped
         })
 
-        # OCR vorbereiten
-        ocr_image = prepare_for_ocr(cropped)
+    st.subheader("Einträge prüfen und zuordnen")
 
-        # OCR ausführen
-        raw_text = pytesseract.image_to_string(
-            ocr_image,
-            lang="deu",
-            config="--psm 7"
-        )
-
-        erkannt = clean_text(raw_text)
-
-        results.append({
-            "Datei": file.name,
-            "OCR-Vorschlag": erkannt
-        })
-
-    st.subheader("Automatische OCR-Ergebnisse")
-
-    df = pd.DataFrame(results)
-
-    corrected_values = []
-
-    for i, row in df.iterrows():
-        st.write(f"**{row['Datei']}**")
+    # Manuelle Zuordnung
+    for i, item in enumerate(images):
+        st.write(f"**Eintrag {i+1}: {item['datei']}**")
 
         col1, col2 = st.columns([1, 2])
 
         with col1:
-            st.image(images[i]["bild"], caption="Ausschnitt", width=180)
+            st.image(item["bild"], caption="Ausschnitt", width=220)
 
         with col2:
-            corrected = st.text_input(
-                "Korrektur / bestätigter Wert",
-                value=row["OCR-Vorschlag"],
-                key=f"corrected_{i}"
+            auswahl = st.selectbox(
+                "Kürzel / Name auswählen",
+                optionen,
+                key=f"select_{i}"
             )
-            corrected_values.append(clean_text(corrected))
 
-    df["Bestätigter Wert"] = corrected_values
+            if auswahl == "Andere":
+                auswahl = st.text_input(
+                    "Anderen Wert eingeben",
+                    key=f"other_{i}"
+                )
 
-    st.subheader("Häufigkeiten")
+            values.append(auswahl)
 
-    filtered_values = [
-        value for value in corrected_values
-        if value != ""
-    ]
+    # Leere Werte entfernen
+    filtered_values = [v for v in values if v != ""]
 
     counts = Counter(filtered_values)
 
@@ -110,14 +83,26 @@ if uploaded_files:
         columns=["Kürzel / Name", "Häufigkeit"]
     ).sort_values(by="Häufigkeit", ascending=False)
 
+    st.subheader("Häufigkeiten")
+
     st.dataframe(count_df, use_container_width=True)
+
+    # Detailtabelle
+    detail_df = pd.DataFrame({
+        "Datei": [item["datei"] for item in images],
+        "Zugeordneter Wert": values
+    })
+
+    st.subheader("Detailauswertung")
+
+    st.dataframe(detail_df, use_container_width=True)
 
     # PDF erstellen
     buffer = io.BytesIO()
     c = canvas.Canvas(buffer, pagesize=A4)
 
-    width, height = A4
-    y = height - 50
+    page_width, page_height = A4
+    y = page_height - 50
 
     for i, item in enumerate(images):
         img = item["bild"]
@@ -126,10 +111,15 @@ if uploaded_files:
         new_width = 150
         new_height = new_width * (h / w)
 
+        # Neue Seite, falls nicht genug Platz
+        if y - new_height < 80:
+            c.showPage()
+            y = page_height - 50
+
         c.drawString(50, y, f"Eintrag {i+1}: {item['datei']}")
         y -= 20
 
-        c.drawString(220, y + 5, f"Auswertung: {corrected_values[i]}")
+        c.drawString(220, y + 5, f"Auswertung: {values[i]}")
 
         c.drawInlineImage(
             img,
@@ -141,15 +131,11 @@ if uploaded_files:
 
         y -= (new_height + 40)
 
-        if y < 100:
-            c.showPage()
-            y = height - 50
-
     c.save()
 
     pdf_bytes = buffer.getvalue()
 
-    # Vorschau fertige PDF
+    # PDF-Vorschau vor Download
     st.subheader("Vorschau der fertigen PDF")
 
     pdf_preview = convert_from_bytes(pdf_bytes, dpi=150)
@@ -157,19 +143,30 @@ if uploaded_files:
     for i, page in enumerate(pdf_preview):
         st.image(page, caption=f"Seite {i+1}", use_column_width=True)
 
+    # PDF Download
     st.download_button(
         "PDF herunterladen",
         pdf_bytes,
-        "ergebnis.pdf"
+        "ergebnis.pdf",
+        "application/pdf"
     )
 
-    # CSV Download für Auswertung
-    csv = count_df.to_csv(index=False).encode("utf-8-sig")
+    # CSV Detailauswertung
+    detail_csv = detail_df.to_csv(index=False).encode("utf-8-sig")
 
     st.download_button(
-        "Auswertung als CSV herunterladen",
-        csv,
-        "auswertung.csv",
+        "Detailauswertung als CSV herunterladen",
+        detail_csv,
+        "detailauswertung.csv",
         "text/csv"
     )
 
+    # CSV Häufigkeiten
+    count_csv = count_df.to_csv(index=False).encode("utf-8-sig")
+
+    st.download_button(
+        "Häufigkeiten als CSV herunterladen",
+        count_csv,
+        "haeufigkeiten.csv",
+        "text/csv"
+    )
