@@ -19,9 +19,14 @@ uploaded_files = st.file_uploader(
 # Hier kannst du deine bekannten Kürzel/Namen eintragen
 optionen = [
     "",
-    "Schu",
-    "Pothig S.",
-    "Unklar",
+    "Andreas Bayer",
+    "Frank Feißt",
+    "Manuel Huber",
+    "Patrick Schuler"
+    "Stefan Lehmann",
+    "CHristian Wylegalla",
+    "Günter Obert",
+    "Markus Schnaitter",
     "Andere"
 ]
 
