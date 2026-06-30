@@ -36,6 +36,39 @@ optionen = [
     "Andere"
 ]
 
+# Koordinaten deines Feldes im korrekt ausgerichteten Dokument
+Y1, Y2 = 900, 1400
+X1, X2 = 2000, 2300
+
+def crop_field(page_img, correction_angle):
+    """
+    Dreht die komplette Seite in eine mögliche korrekte Ausrichtung
+    und schneidet danach immer denselben Feldbereich aus.
+    """
+
+    rotated_page = page_img.rotate(correction_angle, expand=True)
+    img_array = np.array(rotated_page)
+
+    h_img, w_img = img_array.shape[:2]
+
+    # Sicherheitsprüfung, falls die Seite nach Rotation kleiner ist
+    y1 = max(0, min(Y1, h_img))
+    y2 = max(0, min(Y2, h_img))
+    x1 = max(0, min(X1, w_img))
+    x2 = max(0, min(X2, w_img))
+
+    roi = img_array[y1:y2, x1:x2]
+
+    if roi.size == 0:
+        return None
+
+    cropped = Image.fromarray(roi).convert("RGB")
+
+    # Ausschnitt wie bisher lesbar drehen
+    cropped = cropped.rotate(90, expand=True)
+
+    return cropped
+
 if uploaded_files:
     entries = []
     values = []
@@ -44,45 +77,32 @@ if uploaded_files:
         try:
             pages = convert_from_bytes(file.read(), dpi=300)
             img = np.array(pages[0])
+            page_img = Image.fromarray(img).convert("RGB")
 
-            # Original-Koordinaten für normal ausgerichtetes Blatt
-            y1, y2 = 900, 1400
-            x1, x2 = 2000, 2300
+            # Variante 1: Dokument ist normal
+            variant_normal = crop_field(page_img, 0)
 
-            # Bildhöhe und Bildbreite bestimmen
-            h_img, w_img = img.shape[:2]
+            # Variante 2: Dokument ist 180° verdreht
+            variant_180 = crop_field(page_img, 180)
 
-            # Variante 1: normale Position
-            roi_normal = img[y1:y2, x1:x2]
+            # Variante 3: Dokument ist 90° nach rechts gedreht
+            # Korrektur: Seite 90° nach links drehen
+            variant_90_rechts = crop_field(page_img, 90)
 
-            if roi_normal.size == 0:
-                st.error(f"Ausschnitt NORMAL bei Datei {file.name} ist leer. Bitte Koordinaten prüfen.")
+            # Variante 4: Dokument ist 90° nach links gedreht
+            # Korrektur: Seite 90° nach rechts drehen
+            variant_90_links = crop_field(page_img, -90)
+
+            if variant_normal is None and variant_180 is None and variant_90_rechts is None and variant_90_links is None:
+                st.error(f"Bei Datei {file.name} konnte kein gültiger Ausschnitt erzeugt werden. Bitte Koordinaten prüfen.")
                 st.stop()
-
-            cropped_normal = Image.fromarray(roi_normal).convert("RGB")
-            cropped_normal = cropped_normal.rotate(90, expand=True)
-
-            # Variante 2: Position, falls Blatt um 180° verdreht ist
-            y1_180 = h_img - y2
-            y2_180 = h_img - y1
-            x1_180 = w_img - x2
-            x2_180 = w_img - x1
-
-            roi_180 = img[y1_180:y2_180, x1_180:x2_180]
-
-            if roi_180.size == 0:
-                st.error(f"Ausschnitt 180° bei Datei {file.name} ist leer. Bitte Koordinaten prüfen.")
-                st.stop()
-
-            cropped_180 = Image.fromarray(roi_180).convert("RGB")
-
-            # Damit der zweite Ausschnitt lesbar angezeigt wird
-            cropped_180 = cropped_180.rotate(270, expand=True)
 
             entries.append({
                 "datei": file.name,
-                "normal": cropped_normal,
-                "gedreht_180": cropped_180
+                "normal": variant_normal,
+                "gedreht_180": variant_180,
+                "gedreht_90_rechts": variant_90_rechts,
+                "gedreht_90_links": variant_90_links
             })
 
         except Exception as e:
@@ -95,25 +115,53 @@ if uploaded_files:
     for i, entry in enumerate(entries):
         st.write(f"**Eintrag {i+1}: {entry['datei']}**")
 
-        col1, col2, col3 = st.columns([1, 1, 2])
+        col1, col2, col3, col4, col5 = st.columns([1, 1, 1, 1, 2])
 
         with col1:
-            st.image(
-                entry["normal"],
-                caption="Variante 1",
-                width=180,
-                output_format="PNG"
-            )
+            if entry["normal"] is not None:
+                st.image(
+                    entry["normal"],
+                    caption="Normal",
+                    width=140,
+                    output_format="PNG"
+                )
+            else:
+                st.warning("Kein Bild")
 
         with col2:
-            st.image(
-                entry["gedreht_180"],
-                caption="Variante 2 bei 180°",
-                width=180,
-                output_format="PNG"
-            )
+            if entry["gedreht_180"] is not None:
+                st.image(
+                    entry["gedreht_180"],
+                    caption="180°",
+                    width=140,
+                    output_format="PNG"
+                )
+            else:
+                st.warning("Kein Bild")
 
         with col3:
+            if entry["gedreht_90_rechts"] is not None:
+                st.image(
+                    entry["gedreht_90_rechts"],
+                    caption="90° rechts",
+                    width=140,
+                    output_format="PNG"
+                )
+            else:
+                st.warning("Kein Bild")
+
+        with col4:
+            if entry["gedreht_90_links"] is not None:
+                st.image(
+                    entry["gedreht_90_links"],
+                    caption="90° links",
+                    width=140,
+                    output_format="PNG"
+                )
+            else:
+                st.warning("Kein Bild")
+
+        with col5:
             auswahl = st.selectbox(
                 "Kürzel / Name auswählen",
                 optionen,
@@ -159,20 +207,26 @@ if uploaded_files:
     y = page_height - 50
 
     for i, entry in enumerate(entries):
-        img_normal = entry["normal"]
-        img_180 = entry["gedreht_180"]
 
-        new_width = 130
+        variants = [
+            ("Normal", entry["normal"]),
+            ("180 Grad", entry["gedreht_180"]),
+            ("90 Grad rechts", entry["gedreht_90_rechts"]),
+            ("90 Grad links", entry["gedreht_90_links"])
+        ]
 
-        w1, h1 = img_normal.size
-        new_height_1 = new_width * (h1 / w1)
+        valid_variants = [(label, img) for label, img in variants if img is not None]
 
-        w2, h2 = img_180.size
-        new_height_2 = new_width * (h2 / w2)
+        new_width = 90
+        heights = []
 
-        max_height = max(new_height_1, new_height_2)
+        for label, img in valid_variants:
+            w, h = img.size
+            heights.append(new_width * (h / w))
 
-        if y - max_height < 100:
+        max_height = max(heights) if heights else 100
+
+        if y - max_height < 120:
             c.showPage()
             y = page_height - 50
 
@@ -180,23 +234,22 @@ if uploaded_files:
         c.drawString(350, y, f"Auswertung: {values[i]}")
         y -= 20
 
-        c.drawString(50, y, "Variante 1")
-        c.drawInlineImage(
-            img_normal,
-            50,
-            y - new_height_1 - 15,
-            width=new_width,
-            height=new_height_1
-        )
+        x_positions = [50, 160, 270, 380]
 
-        c.drawString(220, y, "Variante 2 bei 180 Grad")
-        c.drawInlineImage(
-            img_180,
-            220,
-            y - new_height_2 - 15,
-            width=new_width,
-            height=new_height_2
-        )
+        for idx, (label, img) in enumerate(valid_variants):
+            w, h = img.size
+            new_height = new_width * (h / w)
+
+            x_pos = x_positions[idx]
+
+            c.drawString(x_pos, y, label)
+            c.drawInlineImage(
+                img,
+                x_pos,
+                y - new_height - 15,
+                width=new_width,
+                height=new_height
+            )
 
         y -= (max_height + 70)
 
