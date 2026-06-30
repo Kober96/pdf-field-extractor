@@ -40,11 +40,11 @@ optionen = [
 Y1, Y2 = 900, 1400
 X1, X2 = 2000, 2300
 
-def crop_field(page_img, correction_angle, offset_x_percent=0, offset_y_percent=0):
+def crop_field(page_img, correction_angle, offset_x=0, offset_y=0):
     """
-    Dreht die komplette Seite in eine mögliche Ausrichtung
-    und schneidet danach den Feldbereich aus.
-    Optional kann der Ausschnitt pro Variante verschoben werden.
+    Dreht die komplette Seite und verschiebt danach optional den Ausschnitt.
+    offset_x = Verschiebung nach rechts in Pixeln
+    offset_y = Verschiebung nach unten in Pixeln
     """
 
     rotated_page = page_img.rotate(correction_angle, expand=True)
@@ -52,15 +52,7 @@ def crop_field(page_img, correction_angle, offset_x_percent=0, offset_y_percent=
 
     h_img, w_img = img_array.shape[:2]
 
-    # Grundgröße des Ausschnitts
-    crop_width = X2 - X1
-    crop_height = Y2 - Y1
-
-    # Verschiebung berechnen
-    offset_x = int(crop_width * offset_x_percent)
-    offset_y = int(crop_height * offset_y_percent)
-
-    # Koordinaten mit Verschiebung
+    # Koordinaten mit optionaler Verschiebung
     y1 = Y1 + offset_y
     y2 = Y2 + offset_y
     x1 = X1 + offset_x
