@@ -38,7 +38,7 @@ optionen = [
 
 # Ausgangskoordinaten
 Y1, Y2 = 900, 1400
-X1, X2 = 1700, 2200
+X1, X2 = 1900, 2100
 
 
 # ✅ Sichere Crop-Funktion gegen leere oder ungültige Ausschnitte
