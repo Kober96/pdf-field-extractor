@@ -7,6 +7,7 @@ from reportlab.lib.pagesizes import A4
 import io
 import pandas as pd
 from collections import Counter
+import gc
 
 st.title("Feld-Extractor mit manueller Auswertung")
 
@@ -16,7 +17,12 @@ uploaded_files = st.file_uploader(
     accept_multiple_files=True
 )
 
-# Hier kannst du deine bekannten Kürzel/Namen eintragen
+# Sicherheitslimit gegen Streamlit-Abstürze
+if uploaded_files and len(uploaded_files) > 15:
+    st.error("Bitte maximal 15 PDFs gleichzeitig hochladen.")
+    st.stop()
+
+# Bekannte Kürzel/Namen
 optionen = [
     "",
     "Andreas Bayer",
@@ -36,21 +42,35 @@ if uploaded_files:
 
     # PDFs einlesen und Feld ausschneiden
     for file in uploaded_files:
-        pages = convert_from_bytes(file.read(), dpi=300)
-        img = np.array(pages[0])
+        try:
+            pages = convert_from_bytes(file.read(), dpi=300)
+            img = np.array(pages[0])
 
-        # Koordinaten deines Feldes
-        roi = img[900:1400, 2000:2300]
+            # Koordinaten deines Feldes
+            roi = img[900:1400, 2000:2300]
 
-        cropped = Image.fromarray(roi)
+            # Prüfung, ob der Ausschnitt leer ist
+            if roi.size == 0:
+                st.error(f"Ausschnitt bei Datei {file.name} ist leer. Bitte Koordinaten prüfen.")
+                st.stop()
 
-        # 90° nach links drehen
-        cropped = cropped.rotate(90, expand=True)
+            cropped = Image.fromarray(roi)
 
-        images.append({
-            "datei": file.name,
-            "bild": cropped
-        })
+            # Wichtig: RGB erzwingen, verhindert Streamlit/PIL-Bildfehler
+            cropped = cropped.convert("RGB")
+
+            # 90° nach links drehen
+            cropped = cropped.rotate(90, expand=True)
+
+            images.append({
+                "datei": file.name,
+                "bild": cropped
+            })
+
+        except Exception as e:
+            st.error(f"Fehler beim Verarbeiten von {file.name}")
+            st.exception(e)
+            st.stop()
 
     st.subheader("Einträge prüfen und zuordnen")
 
@@ -61,7 +81,12 @@ if uploaded_files:
         col1, col2 = st.columns([1, 2])
 
         with col1:
-            st.image(item["bild"], caption="Ausschnitt", width=220)
+            st.image(
+                item["bild"],
+                caption="Ausschnitt",
+                width=220,
+                output_format="PNG"
+            )
 
         with col2:
             auswahl = st.selectbox(
@@ -89,7 +114,6 @@ if uploaded_files:
     ).sort_values(by="Häufigkeit", ascending=False)
 
     st.subheader("Häufigkeiten")
-
     st.dataframe(count_df, use_container_width=True)
 
     # Detailtabelle
@@ -99,8 +123,10 @@ if uploaded_files:
     })
 
     st.subheader("Detailauswertung")
-
     st.dataframe(detail_df, use_container_width=True)
+
+    # Speicher etwas freigeben
+    gc.collect()
 
     # PDF erstellen
     buffer = io.BytesIO()
@@ -143,10 +169,23 @@ if uploaded_files:
     # PDF-Vorschau vor Download
     st.subheader("Vorschau der fertigen PDF")
 
-    pdf_preview = convert_from_bytes(pdf_bytes, dpi=150)
+    try:
+        # Niedrige DPI + nur erste Seite = stabiler auf Streamlit Cloud
+        pdf_preview = convert_from_bytes(pdf_bytes, dpi=80)
 
-    for i, page in enumerate(pdf_preview):
-        st.image(page, caption=f"Seite {i+1}", use_column_width=True)
+        if len(pdf_preview) > 0:
+            st.image(
+                pdf_preview[0],
+                caption="Vorschau Seite 1",
+                use_column_width=True,
+                output_format="PNG"
+            )
+
+        if len(pdf_preview) > 1:
+            st.info("Es wird aus Stabilitätsgründen nur die erste Seite als Vorschau angezeigt. Die heruntergeladene PDF enthält alle Seiten.")
+
+    except Exception:
+        st.warning("Die PDF-Vorschau konnte nicht erzeugt werden. Der Download funktioniert trotzdem.")
 
     # PDF Download
     st.download_button(
