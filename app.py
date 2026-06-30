@@ -17,13 +17,9 @@ if uploaded_files:
         pages = convert_from_bytes(file.read(), dpi=300)
         img = np.array(pages[0])
 
-        # 👉 Koordinaten
         roi = img[900:1400, 2000:2300]
 
-        # 👉 in PIL umwandeln
         cropped = Image.fromarray(roi)
-
-        # ✅ 90° nach links drehen
         cropped = cropped.rotate(90, expand=True)
 
         images.append(cropped)
@@ -35,16 +31,13 @@ if uploaded_files:
     y = height - 50
 
     for i, img in enumerate(images):
-
-        # ✅ Größe automatisch proportional (halb so breit)
         w, h = img.size
-        new_width = 150   # vorher 300 → jetzt halb
+        new_width = 150
         new_height = new_width * (h / w)
 
         c.drawString(50, y, f"Eintrag {i+1}")
         y -= 20
 
-        # ✅ korrekt gedreht + skaliert einfügen
         c.drawInlineImage(img, 50, y - new_height, width=new_width, height=new_height)
 
         y -= (new_height + 20)
@@ -55,5 +48,17 @@ if uploaded_files:
 
     c.save()
 
-    st.download_button("PDF herunterladen", buffer.getvalue(), "ergebnis.pdf")
+    # ✅ PDF Bytes holen
+    pdf_bytes = buffer.getvalue()
+
+    # ✅ Vorschau
+    st.subheader("Vorschau")
+
+    pdf_preview = convert_from_bytes(pdf_bytes, dpi=150)
+
+    for i, page in enumerate(pdf_preview):
+        st.image(page, caption=f"Seite {i+1}", use_column_width=True)
+
+    # ✅ EINMALIGER Download-Button (wichtig!)
+    st.download_button("PDF herunterladen", pdf_bytes, "ergebnis.pdf")
 
