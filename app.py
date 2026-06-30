@@ -163,3 +163,41 @@ if uploaded_files:
 
         c.drawString(50, y, f"{entry['datei']}")
         c.drawString(350, y, f"{values[i]}")
+        y -= 20
+
+        x_pos = [50, 150, 250, 350]
+
+        for idx, img in enumerate(imgs):
+            w, h = img.size
+            h_new = new_w * (h / w)
+
+            c.drawInlineImage(
+                img,
+                x_pos[idx],
+                y - h_new,
+                width=new_w,
+                height=h_new
+            )
+
+        y -= (max_h + 60)
+
+    c.save()
+
+    pdf_bytes = buffer.getvalue()
+
+    # ✅ Vorschau
+    st.subheader("Vorschau")
+
+    try:
+        preview = convert_from_bytes(pdf_bytes, dpi=80)
+        st.image(preview[0], use_column_width=True)
+    except:
+        st.warning("Vorschau nicht möglich")
+
+    st.download_button("PDF herunterladen", pdf_bytes)
+
+    st.download_button(
+        "CSV herunterladen",
+        df.to_csv(index=False).encode("utf-8"),
+        "auswertung.csv"
+    )
