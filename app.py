@@ -16,67 +16,54 @@ uploaded_files = st.file_uploader(
     accept_multiple_files=True
 )
 
-# Bekannte Kürzel/Namen
+# Hier kannst du deine bekannten Kürzel/Namen eintragen
 optionen = [
     "",
-    "Schu",
-    "Pothig S.",
-    "Unklar",
+    "Andreas Bayer",
+    "Frank Feißt",
+    "Manuel Huber",
+    "Patrick Schuler",
+    "Stefan Lehmann",
+    "Christian Wylegalla",
+    "Günter Obert",
+    "Markus Schnaitter",
     "Andere"
 ]
 
 if uploaded_files:
-    entries = []
+    images = []
     values = []
 
+    # PDFs einlesen und Feld ausschneiden
     for file in uploaded_files:
-        pages = convert_from_bytes(file.read(), dpi=150)
+        pages = convert_from_bytes(file.read(), dpi=300)
         img = np.array(pages[0])
 
-        # Originalseite als PIL-Bild
-        page_img = Image.fromarray(img)
+        # Koordinaten deines Feldes
+        roi = img[900:1400, 2000:2300]
 
-        # Variante 1: normale Ausrichtung
-        roi_normal = img[900:1400, 2000:2300]
-        cropped_normal = Image.fromarray(roi_normal)
-        cropped_normal = cropped_normal.rotate(90, expand=True)
+        cropped = Image.fromarray(roi)
 
-        # Variante 2: Seite zuerst 180° drehen, dann denselben Bereich ausschneiden
-        page_rotated_180 = page_img.rotate(180, expand=True)
-        img_rotated_180 = np.array(page_rotated_180)
+        # 90° nach links drehen
+        cropped = cropped.rotate(90, expand=True)
 
-        roi_180 = img_rotated_180[900:1400, 2000:2300]
-        cropped_180 = Image.fromarray(roi_180)
-        cropped_180 = cropped_180.rotate(90, expand=True)
-
-        entries.append({
+        images.append({
             "datei": file.name,
-            "normal": cropped_normal,
-            "gedreht_180": cropped_180
+            "bild": cropped
         })
 
     st.subheader("Einträge prüfen und zuordnen")
 
-    for i, entry in enumerate(entries):
-        st.write(f"**Eintrag {i+1}: {entry['datei']}**")
+    # Manuelle Zuordnung
+    for i, item in enumerate(images):
+        st.write(f"**Eintrag {i+1}: {item['datei']}**")
 
-        col1, col2, col3 = st.columns([1, 1, 2])
+        col1, col2 = st.columns([1, 2])
 
         with col1:
-            st.image(
-                entry["normal"],
-                caption="Variante 1: normal",
-                width=180
-            )
+            st.image(item["bild"], caption="Ausschnitt", width=220)
 
         with col2:
-            st.image(
-                entry["gedreht_180"],
-                caption="Variante 2: Blatt 180° gedreht",
-                width=180
-            )
-
-        with col3:
             auswahl = st.selectbox(
                 "Kürzel / Name auswählen",
                 optionen,
@@ -91,7 +78,7 @@ if uploaded_files:
 
             values.append(auswahl)
 
-    # Häufigkeiten
+    # Leere Werte entfernen
     filtered_values = [v for v in values if v != ""]
 
     counts = Counter(filtered_values)
@@ -102,15 +89,17 @@ if uploaded_files:
     ).sort_values(by="Häufigkeit", ascending=False)
 
     st.subheader("Häufigkeiten")
+
     st.dataframe(count_df, use_container_width=True)
 
-    # Detailauswertung
+    # Detailtabelle
     detail_df = pd.DataFrame({
-        "Datei": [entry["datei"] for entry in entries],
+        "Datei": [item["datei"] for item in images],
         "Zugeordneter Wert": values
     })
 
     st.subheader("Detailauswertung")
+
     st.dataframe(detail_df, use_container_width=True)
 
     # PDF erstellen
@@ -120,57 +109,38 @@ if uploaded_files:
     page_width, page_height = A4
     y = page_height - 50
 
-    for i, entry in enumerate(entries):
-        img_normal = entry["normal"]
-        img_180 = entry["gedreht_180"]
+    for i, item in enumerate(images):
+        img = item["bild"]
 
-        # Größen
-        new_width = 130
-
-        w1, h1 = img_normal.size
-        new_height_1 = new_width * (h1 / w1)
-
-        w2, h2 = img_180.size
-        new_height_2 = new_width * (h2 / w2)
-
-        max_height = max(new_height_1, new_height_2)
+        w, h = img.size
+        new_width = 150
+        new_height = new_width * (h / w)
 
         # Neue Seite, falls nicht genug Platz
-        if y - max_height < 100:
+        if y - new_height < 80:
             c.showPage()
             y = page_height - 50
 
-        c.drawString(50, y, f"Eintrag {i+1}: {entry['datei']}")
-        c.drawString(350, y, f"Auswertung: {values[i]}")
+        c.drawString(50, y, f"Eintrag {i+1}: {item['datei']}")
         y -= 20
 
-        # Variante normal
-        c.drawString(50, y, "Normal")
+        c.drawString(220, y + 5, f"Auswertung: {values[i]}")
+
         c.drawInlineImage(
-            img_normal,
+            img,
             50,
-            y - new_height_1 - 15,
+            y - new_height,
             width=new_width,
-            height=new_height_1
+            height=new_height
         )
 
-        # Variante 180°
-        c.drawString(220, y, "180 Grad gedreht")
-        c.drawInlineImage(
-            img_180,
-            220,
-            y - new_height_2 - 15,
-            width=new_width,
-            height=new_height_2
-        )
-
-        y -= (max_height + 60)
+        y -= (new_height + 40)
 
     c.save()
 
     pdf_bytes = buffer.getvalue()
 
-    # Vorschau der fertigen PDF
+    # PDF-Vorschau vor Download
     st.subheader("Vorschau der fertigen PDF")
 
     pdf_preview = convert_from_bytes(pdf_bytes, dpi=150)
