@@ -37,7 +37,7 @@ optionen = [
 ]
 
 # Ausgangskoordinaten
-Y1, Y2 = 900, 1300
+Y1, Y2 = 900, 1400
 X1, X2 = 1900, 2300
 
 
