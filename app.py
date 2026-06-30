@@ -22,9 +22,9 @@ optionen = [
     "Andreas Bayer",
     "Frank Feißt",
     "Manuel Huber",
-    "Patrick Schuler"
+    "Patrick Schuler",
     "Stefan Lehmann",
-    "CHristian Wylegalla",
+    "Christian Wylegalla",
     "Günter Obert",
     "Markus Schnaitter",
     "Andere"
