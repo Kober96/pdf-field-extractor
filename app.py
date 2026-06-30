@@ -73,8 +73,8 @@ if uploaded_files:
         img_90l = np.array(page_img.rotate(-90, expand=True))
 
         # Verschiebung (60px rechts, 250px runter)
-        y1_90l = Y1 + 300
-        y2_90l = Y2 + 300
+        y1_90l = Y1 + 600
+        y2_90l = Y2 + 600
         x1_90l = X1 + 30
         x2_90l = X2 + 30
 
