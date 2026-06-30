@@ -91,7 +91,7 @@ if uploaded_files:
             # Nur erste Seite laden, niedrige DPI für Stabilität
             pages = convert_from_bytes(
                 pdf_bytes_input,
-                dpi=100,
+                dpi=300,
                 first_page=1,
                 last_page=1
             )
