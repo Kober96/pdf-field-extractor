@@ -40,10 +40,11 @@ optionen = [
 Y1, Y2 = 900, 1400
 X1, X2 = 2000, 2300
 
-def crop_field(page_img, correction_angle):
+def crop_field(page_img, correction_angle, offset_x_percent=0, offset_y_percent=0):
     """
-    Dreht die komplette Seite in eine mögliche korrekte Ausrichtung
-    und schneidet danach immer denselben Feldbereich aus.
+    Dreht die komplette Seite in eine mögliche Ausrichtung
+    und schneidet danach den Feldbereich aus.
+    Optional kann der Ausschnitt pro Variante verschoben werden.
     """
 
     rotated_page = page_img.rotate(correction_angle, expand=True)
@@ -51,11 +52,25 @@ def crop_field(page_img, correction_angle):
 
     h_img, w_img = img_array.shape[:2]
 
-    # Sicherheitsprüfung, falls die Seite nach Rotation kleiner ist
-    y1 = max(0, min(Y1, h_img))
-    y2 = max(0, min(Y2, h_img))
-    x1 = max(0, min(X1, w_img))
-    x2 = max(0, min(X2, w_img))
+    # Grundgröße des Ausschnitts
+    crop_width = X2 - X1
+    crop_height = Y2 - Y1
+
+    # Verschiebung berechnen
+    offset_x = int(crop_width * offset_x_percent)
+    offset_y = int(crop_height * offset_y_percent)
+
+    # Koordinaten mit Verschiebung
+    y1 = Y1 + offset_y
+    y2 = Y2 + offset_y
+    x1 = X1 + offset_x
+    x2 = X2 + offset_x
+
+    # Sicherheitsbegrenzung
+    y1 = max(0, min(y1, h_img))
+    y2 = max(0, min(y2, h_img))
+    x1 = max(0, min(x1, w_img))
+    x2 = max(0, min(x2, w_img))
 
     roi = img_array[y1:y2, x1:x2]
 
@@ -64,7 +79,7 @@ def crop_field(page_img, correction_angle):
 
     cropped = Image.fromarray(roi).convert("RGB")
 
-    # Ausschnitt wie bisher lesbar drehen
+    # Ausschnitt lesbar drehen
     cropped = cropped.rotate(90, expand=True)
 
     return cropped
