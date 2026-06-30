@@ -1,3 +1,4 @@
+
 import streamlit as st
 from pdf2image import convert_from_bytes
 from PIL import Image
@@ -36,7 +37,7 @@ if uploaded_files:
 
     # PDFs einlesen und Feld ausschneiden
     for file in uploaded_files:
-        pages = convert_from_bytes(file.read(), dpi=300)
+        pages = convert_from_bytes(file.read(), dpi=150)
         img = np.array(pages[0])
 
         # Koordinaten deines Feldes
