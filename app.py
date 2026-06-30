@@ -18,7 +18,7 @@ if uploaded_files:
         img = np.array(pages[0])
 
         # 👉 Koordinaten
-        roi = img[1200:1400, 2000:2200]
+        roi = img[1000:1300, 1900:2100]
 
         # 👉 in PIL umwandeln
         cropped = Image.fromarray(roi)
