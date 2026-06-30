@@ -1,4 +1,4 @@
-import streamlit as st
+You said: variante 2 in import streamlit as st
 from pdf2image import convert_from_bytes
 from PIL import Image
 import numpy as np
@@ -8,22 +8,8 @@ import io
 import pandas as pd
 from collections import Counter
 import gc
-import os
-import platform
 
 st.title("Feld-Extractor mit manueller Auswertung")
-
-# Funktion zum Öffnen einer Datei
-def open_file(path):
-    system = platform.system()
-
-    if system == "Windows":
-        os.startfile(path)
-    elif system == "Darwin":  # macOS
-        os.system(f'open "{path}"')
-    else:  # Linux
-        os.system(f'xdg-open "{path}"')
-
 
 uploaded_files = st.file_uploader(
     "PDFs hochladen",
@@ -54,27 +40,12 @@ optionen = [
 Y1, Y2 = 800, 1300
 X1, X2 = 1900, 2200
 
-# Ordner zum temporären Speichern der hochgeladenen PDFs
-TEMP_FOLDER = "temp_uploaded_pdfs"
-os.makedirs(TEMP_FOLDER, exist_ok=True)
-
 if uploaded_files:
     entries = []
     values = []
 
     for file in uploaded_files:
-
-        # Datei als Bytes speichern, damit sie mehrfach verwendet werden kann
-        pdf_bytes_input = file.getvalue()
-
-        # Originaldatei lokal zwischenspeichern
-        temp_pdf_path = os.path.join(TEMP_FOLDER, file.name)
-
-        with open(temp_pdf_path, "wb") as f:
-            f.write(pdf_bytes_input)
-
-        pages = convert_from_bytes(pdf_bytes_input, dpi=300)
-
+        pages = convert_from_bytes(file.read(), dpi=300)
         img = np.array(pages[0])
         h_img, w_img = img.shape[:2]
 
@@ -84,7 +55,7 @@ if uploaded_files:
         roi_normal = img[Y1:Y2, X1:X2]
         cropped_normal = Image.fromarray(roi_normal).convert("RGB").rotate(90, expand=True)
 
-        # ✅ 180° Koordinaten spiegeln
+        # ✅ 180° (Koordinaten spiegeln)
         y1_180 = h_img - Y2
         y2_180 = h_img - Y1
         x1_180 = w_img - X2
@@ -101,7 +72,7 @@ if uploaded_files:
         # ✅ 90° links + Verschiebung
         img_90l = np.array(page_img.rotate(-90, expand=True))
 
-        # Verschiebung
+        # Verschiebung (60px rechts, 250px runter)
         y1_90l = Y1 + 150
         y2_90l = Y2 + 250
         x1_90l = X1 + -200
@@ -112,7 +83,6 @@ if uploaded_files:
 
         entries.append({
             "datei": file.name,
-            "pfad": temp_pdf_path,
             "normal": cropped_normal,
             "rot180": cropped_180,
             "rot90r": cropped_90r,
@@ -124,7 +94,7 @@ if uploaded_files:
     for i, entry in enumerate(entries):
         st.write(f"**Eintrag {i+1}: {entry['datei']}**")
 
-        col1, col2, col3, col4, col5 = st.columns([1, 1, 1, 1, 2])
+        col1, col2, col3, col4, col5 = st.columns([1,1,1,1,2])
 
         with col1:
             st.image(entry["normal"], caption="Normal", width=150)
@@ -149,12 +119,6 @@ if uploaded_files:
                 val = st.text_input("Eingabe", key=f"txt_{i}")
 
             values.append(val)
-
-            # ✅ Button zum Öffnen der Originaldatei
-            if st.button("Original-PDF öffnen", key=f"open_{i}"):
-                open_file(entry["pfad"])
-
-        st.divider()
 
     # ✅ Auswertung
     filtered = [v for v in values if v != ""]
@@ -221,7 +185,7 @@ if uploaded_files:
 
     pdf_bytes = buffer.getvalue()
 
-    # ✅ Vorschau stabil
+    # ✅ Vorschau (stabil)
     st.subheader("Vorschau")
 
     try:
@@ -230,16 +194,10 @@ if uploaded_files:
     except:
         st.warning("Vorschau nicht möglich")
 
-    st.download_button(
-        "PDF herunterladen",
-        pdf_bytes,
-        file_name="auswertung.pdf",
-        mime="application/pdf"
-    )
+    st.download_button("PDF herunterladen", pdf_bytes)
 
     st.download_button(
         "CSV herunterladen",
         df.to_csv(index=False).encode("utf-8"),
-        file_name="auswertung.csv",
-        mime="text/csv"
+        "auswertung.csv"
     )
