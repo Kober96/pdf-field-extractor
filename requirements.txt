@@ -3,3 +3,5 @@ pdf2image
 pillow
 numpy
 reportlab
+pytesseract
+pandas
