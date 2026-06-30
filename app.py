@@ -74,7 +74,7 @@ if uploaded_files:
 
         # Verschiebung (60px rechts, 250px runter)
         y1_90l = Y1 + 200
-        y2_90l = Y2 + 300
+        y2_90l = Y2 + 250
         x1_90l = X1 + 30
         x2_90l = X2 + 30
 
