@@ -7,7 +7,6 @@ from reportlab.lib.pagesizes import A4
 import io
 import pandas as pd
 from collections import Counter
-import gc
 
 st.title("Feld-Extractor mit manueller Auswertung")
 
@@ -17,11 +16,7 @@ uploaded_files = st.file_uploader(
     accept_multiple_files=True
 )
 
-# ✅ Sicherheitslimit (verhindert Absturz)
-if uploaded_files and len(uploaded_files) > 15:
-    st.error("Maximal 15 PDFs gleichzeitig laden")
-    st.stop()
-
+# Hier kannst du deine bekannten Kürzel/Namen eintragen
 optionen = [
     "",
     "Andreas Bayer",
@@ -39,15 +34,17 @@ if uploaded_files:
     images = []
     values = []
 
-    # ✅ PDFs mit reduzierter Auflösung laden (RAM FIX)
+    # PDFs einlesen und Feld ausschneiden
     for file in uploaded_files:
-        pages = convert_from_bytes(file.read(), dpi=120)
+        pages = convert_from_bytes(file.read(), dpi=300)
         img = np.array(pages[0])
 
+        # Koordinaten deines Feldes
         roi = img[900:1400, 2000:2300]
+
         cropped = Image.fromarray(roi)
 
-        # 90° drehen
+        # 90° nach links drehen
         cropped = cropped.rotate(90, expand=True)
 
         images.append({
@@ -57,13 +54,14 @@ if uploaded_files:
 
     st.subheader("Einträge prüfen und zuordnen")
 
+    # Manuelle Zuordnung
     for i, item in enumerate(images):
         st.write(f"**Eintrag {i+1}: {item['datei']}**")
 
         col1, col2 = st.columns([1, 2])
 
         with col1:
-            st.image(item["bild"], width=200)
+            st.image(item["bild"], caption="Ausschnitt", width=220)
 
         with col2:
             auswahl = st.selectbox(
@@ -80,8 +78,9 @@ if uploaded_files:
 
             values.append(auswahl)
 
-    # ✅ Auswertung
+    # Leere Werte entfernen
     filtered_values = [v for v in values if v != ""]
+
     counts = Counter(filtered_values)
 
     count_df = pd.DataFrame(
@@ -90,20 +89,20 @@ if uploaded_files:
     ).sort_values(by="Häufigkeit", ascending=False)
 
     st.subheader("Häufigkeiten")
+
     st.dataframe(count_df, use_container_width=True)
 
+    # Detailtabelle
     detail_df = pd.DataFrame({
         "Datei": [item["datei"] for item in images],
         "Zugeordneter Wert": values
     })
 
     st.subheader("Detailauswertung")
+
     st.dataframe(detail_df, use_container_width=True)
 
-    # ✅ Speicher aufräumen vor PDF (wichtig)
-    gc.collect()
-
-    # ✅ PDF erstellen
+    # PDF erstellen
     buffer = io.BytesIO()
     c = canvas.Canvas(buffer, pagesize=A4)
 
@@ -117,6 +116,7 @@ if uploaded_files:
         new_width = 150
         new_height = new_width * (h / w)
 
+        # Neue Seite, falls nicht genug Platz
         if y - new_height < 80:
             c.showPage()
             y = page_height - 50
@@ -137,26 +137,41 @@ if uploaded_files:
         y -= (new_height + 40)
 
     c.save()
+
     pdf_bytes = buffer.getvalue()
 
-    # ✅ 🔥 STABILE VORSCHAU (nur erste Seite, niedrige DPI)
+    # PDF-Vorschau vor Download
     st.subheader("Vorschau der fertigen PDF")
 
-    preview = convert_from_bytes(pdf_bytes, dpi=80)
+    pdf_preview = convert_from_bytes(pdf_bytes, dpi=150)
 
-    if len(preview) > 0:
-        st.image(preview[0], caption="Seite 1", use_column_width=True)
+    for i, page in enumerate(pdf_preview):
+        st.image(page, caption=f"Seite {i+1}", use_column_width=True)
 
-    # ✅ Download
+    # PDF Download
     st.download_button(
         "PDF herunterladen",
         pdf_bytes,
-        "ergebnis.pdf"
+        "ergebnis.pdf",
+        "application/pdf"
     )
 
-    # CSV Export
+    # CSV Detailauswertung
+    detail_csv = detail_df.to_csv(index=False).encode("utf-8-sig")
+
+    st.download_button(
+        "Detailauswertung als CSV herunterladen",
+        detail_csv,
+        "detailauswertung.csv",
+        "text/csv"
+    )
+
+    # CSV Häufigkeiten
+    count_csv = count_df.to_csv(index=False).encode("utf-8-sig")
+
     st.download_button(
         "Häufigkeiten als CSV herunterladen",
-        count_df.to_csv(index=False).encode("utf-8-sig"),
-        "haeufigkeiten.csv"
+        count_csv,
+        "haeufigkeiten.csv",
+        "text/csv"
     )
