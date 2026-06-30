@@ -75,8 +75,8 @@ if uploaded_files:
         # Verschiebung (60px rechts, 250px runter)
         y1_90l = Y1 + 150
         y2_90l = Y2 + 250
-        x1_90l = X1 + -30
-        x2_90l = X2 + -30
+        x1_90l = X1 + -100
+        x2_90l = X2 + -100
 
         roi_90l = img_90l[y1_90l:y2_90l, x1_90l:x2_90l]
         cropped_90l = Image.fromarray(roi_90l).convert("RGB").rotate(90, expand=True)
