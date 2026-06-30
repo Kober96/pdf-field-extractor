@@ -18,7 +18,7 @@ if uploaded_files:
         img = np.array(pages[0])
 
         # 👉 HIER KOORDINATEN ANPASSEN
-        roi = img[400:600, 800:1200]
+        roi = img[1000:1400, 2000:2200]
 
         cropped = Image.fromarray(roi)
         images.append(cropped)
