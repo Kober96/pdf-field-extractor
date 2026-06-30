@@ -37,7 +37,7 @@ optionen = [
 ]
 
 # Ausgangskoordinaten
-Y1, Y2 = 900, 1400
+Y1, Y2 = 800, 1300
 X1, X2 = 2000, 2300
 
 if uploaded_files:
