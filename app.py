@@ -26,11 +26,6 @@ uploaded_files = st.file_uploader(
     accept_multiple_files=True
 )
 
-if uploaded_files and len(uploaded_files) > 15:
-    st.error("Maximal 15 PDFs gleichzeitig laden")
-    st.stop()
-
-
 optionen = [
     "Andreas Bayer",
     "Frank Feißt",
