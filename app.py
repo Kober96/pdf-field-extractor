@@ -17,7 +17,6 @@ uploaded_files = st.file_uploader(
     accept_multiple_files=True
 )
 
-# Limit gegen Absturz
 if uploaded_files and len(uploaded_files) > 15:
     st.error("Maximal 15 PDFs gleichzeitig laden")
     st.stop()
@@ -78,7 +77,6 @@ if uploaded_files:
     values = []
 
     for file in uploaded_files:
-
         try:
             pdf_bytes_input = file.getvalue()
 
@@ -95,7 +93,6 @@ if uploaded_files:
 
             img = np.array(pages[0])
             h_img, w_img = img.shape[:2]
-
             page_img = Image.fromarray(img).convert("RGB")
 
             cropped_normal = safe_crop(img, Y1, Y2, X1, X2, rotate_angle=90)
@@ -154,20 +151,30 @@ if uploaded_files:
                 show_image_or_warning(entry["rot90l"], "90° links")
 
             with col5:
+                # ✅ Default "Andere" setzen (nur einmal)
+                if f"radio_{i}" not in st.session_state:
+                    st.session_state[f"radio_{i}"] = "Andere"
+
                 val = st.radio(
                     "Name auswählen",
                     optionen,
                     key=f"radio_{i}"
                 )
 
+                # ✅ Eingabefeld für "Andere"
                 if val == "Andere":
-                    val = st.text_input("Eingabe", key=f"txt_{i}")
+                    txt_key = f"txt_{i}"
+
+                    if txt_key not in st.session_state:
+                        st.session_state[txt_key] = ""
+
+                    val = st.text_input("Eingabe", key=txt_key)
 
                 values.append(val if val else "")
 
             st.divider()
 
-        # ✅ Button für Auswertung
+        # ✅ Auswertung nur per Button
         if st.button("Auswertung starten"):
 
             filtered = [v for v in values if v != ""]
@@ -181,7 +188,7 @@ if uploaded_files:
             st.subheader("Häufigkeiten")
             st.dataframe(df)
 
-            # ✅ PDF erzeugen
+            # ✅ PDF
             buffer = io.BytesIO()
             c = canvas.Canvas(buffer, pagesize=A4)
 
@@ -190,26 +197,25 @@ if uploaded_files:
 
             for i, entry in enumerate(entries):
 
-                imgs_with_labels = [
+                imgs = [
                     ("Normal", entry["normal"]),
                     ("180°", entry["rot180"]),
                     ("90° rechts", entry["rot90r"]),
                     ("90° links", entry["rot90l"])
                 ]
 
-                imgs_with_labels = [item for item in imgs_with_labels if item[1] is not None]
+                imgs = [item for item in imgs if item[1] is not None]
 
-                if not imgs_with_labels:
+                if not imgs:
                     continue
 
                 new_w = 90
                 heights = []
 
-                for label, img in imgs_with_labels:
+                for _, img in imgs:
                     w, h = img.size
-                    if w == 0:
-                        continue
-                    heights.append(new_w * (h / w))
+                    if w > 0:
+                        heights.append(new_w * (h / w))
 
                 if not heights:
                     continue
@@ -228,7 +234,7 @@ if uploaded_files:
 
                 x_pos = [50, 150, 250, 350]
 
-                for idx, (label, img) in enumerate(imgs_with_labels):
+                for idx, (label, img) in enumerate(imgs):
                     if idx >= len(x_pos):
                         break
 
@@ -251,7 +257,6 @@ if uploaded_files:
                 y -= (max_h + 80)
 
             c.save()
-
             pdf_bytes = buffer.getvalue()
 
             st.download_button("PDF herunterladen", pdf_bytes, "auswertung.pdf")
