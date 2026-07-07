@@ -1,16 +1,18 @@
 import streamlit as st
 from pdf2image import convert_from_bytes
 from PIL import Image
-import numpy as np
 from reportlab.pdfgen import canvas
 from reportlab.lib.pagesizes import A4
 import io
 import pandas as pd
 from collections import Counter
 import gc
+import math
 
 
+# -------------------------------
 # UI-Optimierung
+# -------------------------------
 st.markdown("""
 <style>
 [data-testid="stSpinner"] { display: none !important; }
@@ -20,11 +22,15 @@ st.markdown("""
 
 st.title("Feld-Extractor mit manueller Auswertung")
 
-uploaded_files = st.file_uploader(
-    "PDFs hochladen",
-    type="pdf",
-    accept_multiple_files=True
-)
+
+# -------------------------------
+# Einstellungen
+# -------------------------------
+DPI = 200
+BASE_DPI = 300
+SCALE = DPI / BASE_DPI
+
+ITEMS_PER_PAGE = 10
 
 optionen = [
     "Andreas Bayer",
@@ -38,13 +44,22 @@ optionen = [
     "Andere"
 ]
 
-
+# Ursprüngliche Koordinaten bei 300 dpi
 Y1, Y2 = 900, 1400
 X1, X2 = 1900, 2400
 
 
-def safe_crop(img, y1, y2, x1, x2, rotate_angle=None):
-    h_img, w_img = img.shape[:2]
+def scale_value(v):
+    return int(v * SCALE)
+
+
+def safe_crop_pil(img, y1, y2, x1, x2, rotate_angle=None):
+    """
+    Schneidet einen Bereich aus einem PIL-Bild robust aus.
+    Gibt komprimierte JPEG-Bytes zurück, um RAM zu sparen.
+    """
+
+    w_img, h_img = img.size
 
     y1 = max(0, min(y1, h_img))
     y2 = max(0, min(y2, h_img))
@@ -54,73 +69,141 @@ def safe_crop(img, y1, y2, x1, x2, rotate_angle=None):
     if y2 <= y1 or x2 <= x1:
         return None
 
-    roi = img[y1:y2, x1:x2]
-
-    if roi.size == 0:
-        return None
-
-    cropped = Image.fromarray(roi).convert("RGB")
+    cropped = img.crop((x1, y1, x2, y2)).convert("RGB")
 
     if rotate_angle is not None:
         cropped = cropped.rotate(rotate_angle, expand=True)
 
-    return cropped
+    buffer = io.BytesIO()
+    cropped.save(buffer, format="JPEG", quality=80, optimize=True)
+
+    return buffer.getvalue()
 
 
-@st.cache_data(show_spinner=False)
 def process_pdf(pdf_bytes, filename):
-    pages = convert_from_bytes(pdf_bytes, dpi=300, first_page=1, last_page=1)
+    """
+    Verarbeitet nur die erste Seite einer PDF.
+    Speichert keine großen Bildobjekte dauerhaft.
+    """
 
-    if not pages:
-        return None
+    try:
+        pages = convert_from_bytes(
+            pdf_bytes,
+            dpi=DPI,
+            first_page=1,
+            last_page=1
+        )
 
-    img = np.array(pages[0])
-    h_img, w_img = img.shape[:2]
-    page_img = Image.fromarray(img).convert("RGB")
+        if not pages:
+            return None
 
-    cropped_normal = safe_crop(img, Y1, Y2, X1, X2, rotate_angle=90)
+        page_img = pages[0].convert("RGB")
+        w_img, h_img = page_img.size
 
-    y1_180 = h_img - Y2
-    y2_180 = h_img - Y1
-    x1_180 = w_img - X2
-    x2_180 = w_img - X1
+        y1 = scale_value(Y1)
+        y2 = scale_value(Y2)
+        x1 = scale_value(X1)
+        x2 = scale_value(X2)
 
-    cropped_180 = safe_crop(img, y1_180, y2_180, x1_180, x2_180, rotate_angle=270)
+        cropped_normal = safe_crop_pil(
+            page_img,
+            y1, y2,
+            x1, x2,
+            rotate_angle=90
+        )
 
-    img_90r = np.array(page_img.rotate(90, expand=True))
-    cropped_90r = safe_crop(img_90r, Y1, Y2, X1, X2, rotate_angle=90)
+        y1_180 = h_img - y2
+        y2_180 = h_img - y1
+        x1_180 = w_img - x2
+        x2_180 = w_img - x1
 
-    img_90l = np.array(page_img.rotate(-90, expand=True))
-    cropped_90l = safe_crop(
-        img_90l,
-        Y1 + 150, Y2 + 250,
-        X1 - 200, X2 - 100,
-        rotate_angle=90
-    )
+        cropped_180 = safe_crop_pil(
+            page_img,
+            y1_180, y2_180,
+            x1_180, x2_180,
+            rotate_angle=270
+        )
 
-    return {
-        "datei": filename,
-        "normal": cropped_normal,
-        "rot180": cropped_180,
-        "rot90r": cropped_90r,
-        "rot90l": cropped_90l
-    }
+        img_90r = page_img.rotate(90, expand=True)
+        cropped_90r = safe_crop_pil(
+            img_90r,
+            y1, y2,
+            x1, x2,
+            rotate_angle=90
+        )
+
+        del img_90r
+        gc.collect()
+
+        img_90l = page_img.rotate(-90, expand=True)
+        cropped_90l = safe_crop_pil(
+            img_90l,
+            y1 + scale_value(150),
+            y2 + scale_value(250),
+            x1 - scale_value(200),
+            x2 - scale_value(100),
+            rotate_angle=90
+        )
+
+        del img_90l
+        del page_img
+        del pages
+        gc.collect()
+
+        return {
+            "datei": filename,
+            "normal": cropped_normal,
+            "rot180": cropped_180,
+            "rot90r": cropped_90r,
+            "rot90l": cropped_90l
+        }
+
+    except Exception as e:
+        return {
+            "datei": filename,
+            "fehler": str(e),
+            "normal": None,
+            "rot180": None,
+            "rot90r": None,
+            "rot90l": None
+        }
 
 
-def create_pdf(entries, values):
+def create_pdf(entries, values_dict):
     buffer = io.BytesIO()
     c = canvas.Canvas(buffer, pagesize=A4)
 
     width, height = A4
     y = height - 50
 
-    for i, entry in enumerate(entries):
-        c.drawString(50, y, entry["datei"])
-        c.drawString(450, y, values[i])
-        y -= 40
+    c.drawString(50, y, "Datei")
+    c.drawString(430, y, "Auswahl")
+    y -= 30
+
+    for entry in entries:
+        filename = entry["datei"]
+        value = values_dict.get(filename, "Andere")
+
+        if y < 50:
+            c.showPage()
+            y = height - 50
+
+        c.drawString(50, y, filename[:55])
+        c.drawString(430, y, value)
+        y -= 25
 
     c.save()
     return buffer.getvalue()
+
+
+# -------------------------------
+# Upload
+# -------------------------------
+uploaded_files = st.file_uploader(
+    "PDFs hochladen",
+    type="pdf",
+    accept_multiple_files=True
+)
 
 
 # -------------------------------
@@ -128,64 +211,167 @@ def create_pdf(entries, values):
 # -------------------------------
 if uploaded_files:
 
-    entries = []
+    st.info(f"{len(uploaded_files)} PDF-Dateien hochgeladen.")
 
-    for file in uploaded_files:
-        result = process_pdf(file.getvalue(), file.name)
-        if result:
-            entries.append(result)
+    if len(uploaded_files) > 100:
+        st.warning(
+            "Es wurden mehr als 100 PDFs hochgeladen. "
+            "Die Verarbeitung kann auf Streamlit Cloud je nach Dateigröße länger dauern."
+        )
+
+    if "entries" not in st.session_state:
+        st.session_state.entries = []
+
+    if "processed_filenames" not in st.session_state:
+        st.session_state.processed_filenames = set()
+
+    if "values_dict" not in st.session_state:
+        st.session_state.values_dict = {}
+
+    if st.button("PDFs verarbeiten"):
+
+        st.session_state.entries = []
+        st.session_state.processed_filenames = set()
+        st.session_state.values_dict = {}
+
+        progress = st.progress(0)
+        status = st.empty()
+
+        total = len(uploaded_files)
+
+        for i, file in enumerate(uploaded_files):
+            status.write(f"Verarbeite Datei {i + 1}/{total}: {file.name}")
+
+            try:
+                pdf_bytes = file.getvalue()
+                result = process_pdf(pdf_bytes, file.name)
+
+                if result:
+                    st.session_state.entries.append(result)
+                    st.session_state.processed_filenames.add(file.name)
+
+                    if file.name not in st.session_state.values_dict:
+                        st.session_state.values_dict[file.name] = "Andere"
+
+                del pdf_bytes
+                gc.collect()
+
+            except Exception as e:
+                st.warning(f"Fehler bei {file.name}: {e}")
+
+            progress.progress((i + 1) / total)
+
+        status.success("Verarbeitung abgeschlossen.")
+
+    entries = st.session_state.entries
 
     if entries:
+
         st.subheader("Einträge prüfen")
 
-        with st.form("form"):
-            values = []
+        total_entries = len(entries)
+        total_pages = math.ceil(total_entries / ITEMS_PER_PAGE)
 
-            for i, entry in enumerate(entries):
+        page = st.number_input(
+            "Seite",
+            min_value=1,
+            max_value=total_pages,
+            value=1,
+            step=1
+        )
 
-                st.write(f"**Eintrag {i+1}: {entry['datei']}**")
+        start_idx = (page - 1) * ITEMS_PER_PAGE
+        end_idx = min(start_idx + ITEMS_PER_PAGE, total_entries)
 
-                # ✅ Bilderreihe (kein Überlappen mehr)
-                img_cols = st.columns(4)
+        st.write(
+            f"Zeige Einträge {start_idx + 1} bis {end_idx} "
+            f"von {total_entries}"
+        )
 
-                for col, key, label in zip(
-                    img_cols,
-                    ["normal", "rot180", "rot90r", "rot90l"],
-                    ["Normal", "180°", "90° rechts", "90° links"]
-                ):
-                    with col:
-                        if entry[key] is not None:
-                            st.image(entry[key], caption=label, use_container_width=True)
-                        else:
-                            st.warning("kein Bild")
+        current_entries = entries[start_idx:end_idx]
 
-                # ✅ Auswahl getrennt darunter
-                val = st.radio(
-                    "Name auswählen",
-                    optionen,
-                    index=len(optionen) - 1,
-                    key=f"r_{i}"
-                )
+        for i, entry in enumerate(current_entries, start=start_idx):
 
-                values.append(val)
+            st.write(f"**Eintrag {i + 1}: {entry['datei']}**")
 
-                st.divider()
+            if "fehler" in entry:
+                st.error(f"Fehler beim Verarbeiten: {entry['fehler']}")
 
-            submitted = st.form_submit_button("Auswertung starten")
+            img_cols = st.columns(4)
 
-        if submitted:
+            for col, key, label in zip(
+                img_cols,
+                ["normal", "rot180", "rot90r", "rot90l"],
+                ["Normal", "180°", "90° rechts", "90° links"]
+            ):
+                with col:
+                    if entry[key] is not None:
+                        st.image(
+                            entry[key],
+                            caption=label,
+                            width="stretch"
+                        )
+                    else:
+                        st.warning("kein Bild")
+
+            current_value = st.session_state.values_dict.get(
+                entry["datei"],
+                "Andere"
+            )
+
+            selected_value = st.radio(
+                "Name auswählen",
+                optionen,
+                index=optionen.index(current_value),
+                key=f"radio_{entry['datei']}"
+            )
+
+            st.session_state.values_dict[entry["datei"]] = selected_value
+
+            st.divider()
+
+        st.subheader("Auswertung")
+
+        if st.button("Auswertung starten"):
+
+            values = [
+                st.session_state.values_dict.get(entry["datei"], "Andere")
+                for entry in entries
+            ]
 
             counts = Counter(values)
-            df = pd.DataFrame(counts.items(), columns=["Name", "Häufigkeit"])
-            df = df.sort_values(by="Häufigkeit", ascending=False)
+
+            df = pd.DataFrame(
+                counts.items(),
+                columns=["Name", "Häufigkeit"]
+            )
+
+            df = df.sort_values(
+                by="Häufigkeit",
+                ascending=False
+            )
 
             st.subheader("Häufigkeiten")
-            st.dataframe(df)
+            st.dataframe(df, width="stretch")
 
-            pdf_bytes = create_pdf(entries, values)
+            pdf_bytes = create_pdf(
+                entries,
+                st.session_state.values_dict
+            )
 
-            st.download_button("PDF herunterladen", pdf_bytes, "auswertung.pdf")
-            st.download_button("CSV herunterladen", df.to_csv(index=False), "auswertung.csv")
+            st.download_button(
+                "PDF herunterladen",
+                pdf_bytes,
+                "auswertung.pdf",
+                mime="application/pdf"
+            )
 
-    else:
-        st.warning("Keine gültigen Einträge gefunden.")
+            st.download_button(
+                "CSV herunterladen",
+                df.to_csv(index=False).encode("utf-8"),
+                "auswertung.csv",
+                mime="text/csv"
+            )
+
+    elif st.session_state.get("entries") == []:
+        st.info("Bitte PDFs hochladen und anschließend auf „PDFs verarbeiten“ klicken.")
