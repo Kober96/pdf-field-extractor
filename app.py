@@ -1,4 +1,5 @@
 import streamlit as st
+import streamlit.components.v1 as components
 from pdf2image import convert_from_bytes
 from reportlab.pdfgen import canvas
 from reportlab.lib.pagesizes import A4
@@ -53,6 +54,46 @@ X1, X2 = 1900, 2400
 # -------------------------------
 def scale_value(v):
     return int(v * SCALE)
+
+
+def force_scroll_to_top():
+    """
+    Erzwingt Scrollen an den Seitenanfang nach einem Seitenwechsel.
+    Funktioniert robuster als st.markdown mit script.
+    """
+
+    components.html(
+        """
+        <script>
+        setTimeout(function() {
+            try {
+                window.parent.scrollTo(0, 0);
+
+                const selectors = [
+                    'section.main',
+                    '[data-testid="stAppViewContainer"]',
+                    '[data-testid="stVerticalBlock"]',
+                    '.main',
+                    '.block-container'
+                ];
+
+                selectors.forEach(function(selector) {
+                    const element = window.parent.document.querySelector(selector);
+                    if (element) {
+                        element.scrollTop = 0;
+                        element.scrollIntoView({behavior: "auto", block: "start"});
+                    }
+                });
+
+            } catch (e) {
+                console.log("Scroll error:", e);
+            }
+        }, 300);
+        </script>
+        """,
+        height=0,
+        width=0
+    )
 
 
 def safe_crop_pil(img, y1, y2, x1, x2, rotate_angle=None):
@@ -217,8 +258,8 @@ def get_upload_signature(uploaded_files):
 
 def render_navigation(total_pages, position):
     """
-    Rendert die Seitennavigation.
-    position muss eindeutig sein, damit Streamlit keine doppelten Button-Keys erzeugt.
+    Rendert die Seitennavigation oben und unten.
+    Nach Seitenwechsel wird beim nächsten Rerun nach oben gescrollt.
     """
 
     col1, col2, col3 = st.columns([1, 2, 1])
@@ -230,6 +271,7 @@ def render_navigation(total_pages, position):
                 key=f"prev_{position}_{st.session_state.page}"
             ):
                 st.session_state.page -= 1
+                st.session_state.scroll_to_top = True
                 st.rerun()
 
     with col2:
@@ -249,6 +291,7 @@ def render_navigation(total_pages, position):
                 key=f"next_{position}_{st.session_state.page}"
             ):
                 st.session_state.page += 1
+                st.session_state.scroll_to_top = True
                 st.rerun()
 
 
@@ -269,6 +312,17 @@ if "upload_signature" not in st.session_state:
 
 if "processing_finished" not in st.session_state:
     st.session_state.processing_finished = False
+
+if "scroll_to_top" not in st.session_state:
+    st.session_state.scroll_to_top = False
+
+
+# -------------------------------
+# Scroll nach Seitenwechsel ausführen
+# -------------------------------
+if st.session_state.scroll_to_top:
+    force_scroll_to_top()
+    st.session_state.scroll_to_top = False
 
 
 # -------------------------------
@@ -295,6 +349,7 @@ if uploaded_files:
         st.session_state.page = 1
         st.session_state.upload_signature = current_signature
         st.session_state.processing_finished = False
+        st.session_state.scroll_to_top = False
 
         progress = st.progress(0)
         status = st.empty()
