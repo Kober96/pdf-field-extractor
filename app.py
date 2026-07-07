@@ -215,6 +215,43 @@ def get_upload_signature(uploaded_files):
     )
 
 
+def render_navigation(total_pages, position):
+    """
+    Rendert die Seitennavigation.
+    position muss eindeutig sein, damit Streamlit keine doppelten Button-Keys erzeugt.
+    """
+
+    col1, col2, col3 = st.columns([1, 2, 1])
+
+    with col1:
+        if st.session_state.page > 1:
+            if st.button(
+                "⬅ Vorherige Seite",
+                key=f"prev_{position}_{st.session_state.page}"
+            ):
+                st.session_state.page -= 1
+                st.rerun()
+
+    with col2:
+        st.markdown(
+            f"""
+            <div style='text-align:center; font-weight:bold; padding-top: 0.5rem;'>
+                Seite {st.session_state.page} von {total_pages}
+            </div>
+            """,
+            unsafe_allow_html=True
+        )
+
+    with col3:
+        if st.session_state.page < total_pages:
+            if st.button(
+                "Nächste Seite ➡",
+                key=f"next_{position}_{st.session_state.page}"
+            ):
+                st.session_state.page += 1
+                st.rerun()
+
+
 # -------------------------------
 # Session State initialisieren
 # -------------------------------
@@ -232,9 +269,6 @@ if "upload_signature" not in st.session_state:
 
 if "processing_finished" not in st.session_state:
     st.session_state.processing_finished = False
-
-if "jump_to_entries_top" not in st.session_state:
-    st.session_state.jump_to_entries_top = False
 
 
 # -------------------------------
@@ -261,7 +295,6 @@ if uploaded_files:
         st.session_state.page = 1
         st.session_state.upload_signature = current_signature
         st.session_state.processing_finished = False
-        st.session_state.jump_to_entries_top = False
 
         progress = st.progress(0)
         status = st.empty()
@@ -314,28 +347,6 @@ entries = st.session_state.entries
 
 if entries:
 
-    # Ankerpunkt für automatisches Hochspringen nach Seitenwechsel
-    st.markdown(
-        "<div id='entries_top'></div>",
-        unsafe_allow_html=True
-    )
-
-    if st.session_state.jump_to_entries_top:
-        st.markdown("""
-        <script>
-            setTimeout(function() {
-                const element = window.parent.document.getElementById("entries_top");
-                if (element) {
-                    element.scrollIntoView({behavior: "instant", block: "start"});
-                } else {
-                    window.parent.scrollTo(0, 0);
-                }
-            }, 100);
-        </script>
-        """, unsafe_allow_html=True)
-
-        st.session_state.jump_to_entries_top = False
-
     st.subheader("Einträge prüfen")
 
     total_entries = len(entries)
@@ -353,6 +364,16 @@ if entries:
         f"Einträge {start_idx + 1} bis {end_idx} von {total_entries}"
     )
 
+    # -------------------------------
+    # Navigation oben
+    # -------------------------------
+    render_navigation(total_pages, position="top")
+
+    st.divider()
+
+    # -------------------------------
+    # Einträge der aktuellen Seite
+    # -------------------------------
     for i, entry in enumerate(current_entries, start=start_idx):
 
         st.write(f"**Eintrag {i + 1}: {entry['datei']}**")
@@ -393,34 +414,10 @@ if entries:
 
         st.divider()
 
-
     # -------------------------------
-    # Seitennavigation unten
+    # Navigation unten
     # -------------------------------
-    col1, col2, col3 = st.columns([1, 2, 1])
-
-    with col1:
-        if st.session_state.page > 1:
-            if st.button("⬅ Vorherige Seite"):
-                st.session_state.page -= 1
-                st.session_state.jump_to_entries_top = True
-                st.rerun()
-
-    with col2:
-        st.markdown(
-            f"<div style='text-align:center; font-weight:bold;'>"
-            f"Seite {st.session_state.page} von {total_pages}"
-            f"</div>",
-            unsafe_allow_html=True
-        )
-
-    with col3:
-        if st.session_state.page < total_pages:
-            if st.button("Nächste Seite ➡"):
-                st.session_state.page += 1
-                st.session_state.jump_to_entries_top = True
-                st.rerun()
-
+    render_navigation(total_pages, position="bottom")
 
     # -------------------------------
     # Auswertung
@@ -486,7 +483,6 @@ if entries:
             "auswertung.csv",
             mime="text/csv"
         )
-
 
 else:
     if not uploaded_files:
