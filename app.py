@@ -1,6 +1,5 @@
 import streamlit as st
 from pdf2image import convert_from_bytes
-from PIL import Image
 from reportlab.pdfgen import canvas
 from reportlab.lib.pagesizes import A4
 import io
@@ -49,6 +48,9 @@ Y1, Y2 = 900, 1400
 X1, X2 = 1900, 2400
 
 
+# -------------------------------
+# Hilfsfunktionen
+# -------------------------------
 def scale_value(v):
     return int(v * SCALE)
 
@@ -125,6 +127,7 @@ def process_pdf(pdf_bytes, filename):
         )
 
         img_90r = page_img.rotate(90, expand=True)
+
         cropped_90r = safe_crop_pil(
             img_90r,
             y1, y2,
@@ -136,6 +139,7 @@ def process_pdf(pdf_bytes, filename):
         gc.collect()
 
         img_90l = page_img.rotate(-90, expand=True)
+
         cropped_90l = safe_crop_pil(
             img_90l,
             y1 + scale_value(150),
@@ -199,6 +203,18 @@ def create_pdf(entries, values_dict):
     return buffer.getvalue()
 
 
+def get_upload_signature(uploaded_files):
+    """
+    Erstellt eine einfache Signatur der hochgeladenen Dateien.
+    Damit erkennt die App, ob neue PDFs hochgeladen wurden.
+    """
+
+    return tuple(
+        (file.name, getattr(file, "size", 0))
+        for file in uploaded_files
+    )
+
+
 # -------------------------------
 # Session State initialisieren
 # -------------------------------
@@ -210,6 +226,12 @@ if "values_dict" not in st.session_state:
 
 if "page" not in st.session_state:
     st.session_state.page = 1
+
+if "upload_signature" not in st.session_state:
+    st.session_state.upload_signature = None
+
+if "processing_finished" not in st.session_state:
+    st.session_state.processing_finished = False
 
 
 # -------------------------------
@@ -223,23 +245,19 @@ uploaded_files = st.file_uploader(
 
 
 # -------------------------------
-# MAIN
+# Automatische Verarbeitung nach Upload
 # -------------------------------
 if uploaded_files:
 
-    st.info(f"{len(uploaded_files)} PDF-Dateien hochgeladen.")
+    current_signature = get_upload_signature(uploaded_files)
 
-    if len(uploaded_files) > 100:
-        st.warning(
-            "Es wurden mehr als 100 PDFs hochgeladen. "
-            "Die Verarbeitung kann auf Streamlit Cloud je nach Dateigröße länger dauern."
-        )
-
-    if st.button("PDFs verarbeiten"):
+    if current_signature != st.session_state.upload_signature:
 
         st.session_state.entries = []
         st.session_state.values_dict = {}
         st.session_state.page = 1
+        st.session_state.upload_signature = current_signature
+        st.session_state.processing_finished = False
 
         progress = st.progress(0)
         status = st.empty()
@@ -247,27 +265,42 @@ if uploaded_files:
         total = len(uploaded_files)
 
         for i, file in enumerate(uploaded_files):
-            status.write(f"Verarbeite Datei {i + 1}/{total}: {file.name}")
+
+            status.write(f"Verarbeite PDF {i + 1} von {total}")
 
             try:
                 pdf_bytes = file.getvalue()
-                result = process_pdf(pdf_bytes, file.name)
+
+                result = process_pdf(
+                    pdf_bytes,
+                    file.name
+                )
 
                 if result:
                     st.session_state.entries.append(result)
-
-                    if file.name not in st.session_state.values_dict:
-                        st.session_state.values_dict[file.name] = "Andere"
+                    st.session_state.values_dict[file.name] = "Andere"
 
                 del pdf_bytes
                 gc.collect()
 
             except Exception as e:
-                st.warning(f"Fehler bei {file.name}: {e}")
+                st.session_state.entries.append({
+                    "datei": file.name,
+                    "fehler": str(e),
+                    "normal": None,
+                    "rot180": None,
+                    "rot90r": None,
+                    "rot90l": None
+                })
 
             progress.progress((i + 1) / total)
 
-        status.success("Verarbeitung abgeschlossen.")
+        st.session_state.processing_finished = True
+
+        progress.empty()
+        status.empty()
+
+        st.rerun()
 
 
 # -------------------------------
@@ -291,8 +324,7 @@ if entries:
     current_entries = entries[start_idx:end_idx]
 
     st.write(
-        f"Zeige Einträge {start_idx + 1} bis {end_idx} "
-        f"von {total_entries}"
+        f"Einträge {start_idx + 1} bis {end_idx} von {total_entries}"
     )
 
     for i, entry in enumerate(current_entries, start=start_idx):
@@ -339,8 +371,6 @@ if entries:
     # -------------------------------
     # Seitennavigation unten
     # -------------------------------
-    st.divider()
-
     col1, col2, col3 = st.columns([1, 2, 1])
 
     with col1:
@@ -371,11 +401,13 @@ if entries:
     st.subheader("Auswertung")
 
     if st.session_state.page == total_pages:
+
         st.success("Letzte Seite erreicht. Die Auswertung kann nun gestartet werden.")
 
         auswertung = st.button("Auswertung starten")
 
     else:
+
         st.info(
             f"Die Auswertung wird freigeschaltet, "
             f"sobald die letzte Seite ({total_pages}) erreicht ist."
@@ -427,8 +459,7 @@ if entries:
             mime="text/csv"
         )
 
+
 else:
-    if uploaded_files:
-        st.info("Bitte auf „PDFs verarbeiten“ klicken.")
-    else:
+    if not uploaded_files:
         st.info("Bitte PDFs hochladen.")
