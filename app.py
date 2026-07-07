@@ -205,8 +205,8 @@ def create_pdf(entries, values_dict):
 
 def get_upload_signature(uploaded_files):
     """
-    Erstellt eine einfache Signatur der hochgeladenen Dateien.
-    Damit erkennt die App, ob neue PDFs hochgeladen wurden.
+    Erstellt eine Signatur der hochgeladenen Dateien.
+    Dadurch erkennt die App, ob neue PDFs hochgeladen wurden.
     """
 
     return tuple(
@@ -233,6 +233,9 @@ if "upload_signature" not in st.session_state:
 if "processing_finished" not in st.session_state:
     st.session_state.processing_finished = False
 
+if "jump_to_entries_top" not in st.session_state:
+    st.session_state.jump_to_entries_top = False
+
 
 # -------------------------------
 # Upload
@@ -258,6 +261,7 @@ if uploaded_files:
         st.session_state.page = 1
         st.session_state.upload_signature = current_signature
         st.session_state.processing_finished = False
+        st.session_state.jump_to_entries_top = False
 
         progress = st.progress(0)
         status = st.empty()
@@ -309,6 +313,28 @@ if uploaded_files:
 entries = st.session_state.entries
 
 if entries:
+
+    # Ankerpunkt für automatisches Hochspringen nach Seitenwechsel
+    st.markdown(
+        "<div id='entries_top'></div>",
+        unsafe_allow_html=True
+    )
+
+    if st.session_state.jump_to_entries_top:
+        st.markdown("""
+        <script>
+            setTimeout(function() {
+                const element = window.parent.document.getElementById("entries_top");
+                if (element) {
+                    element.scrollIntoView({behavior: "instant", block: "start"});
+                } else {
+                    window.parent.scrollTo(0, 0);
+                }
+            }, 100);
+        </script>
+        """, unsafe_allow_html=True)
+
+        st.session_state.jump_to_entries_top = False
 
     st.subheader("Einträge prüfen")
 
@@ -377,6 +403,7 @@ if entries:
         if st.session_state.page > 1:
             if st.button("⬅ Vorherige Seite"):
                 st.session_state.page -= 1
+                st.session_state.jump_to_entries_top = True
                 st.rerun()
 
     with col2:
@@ -391,6 +418,7 @@ if entries:
         if st.session_state.page < total_pages:
             if st.button("Nächste Seite ➡"):
                 st.session_state.page += 1
+                st.session_state.jump_to_entries_top = True
                 st.rerun()
 
 
