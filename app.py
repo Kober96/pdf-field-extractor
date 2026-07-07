@@ -187,6 +187,9 @@ def create_pdf(entries, values_dict):
         if y < 50:
             c.showPage()
             y = height - 50
+            c.drawString(50, y, "Datei")
+            c.drawString(430, y, "Auswahl")
+            y -= 30
 
         c.drawString(50, y, filename[:55])
         c.drawString(430, y, value)
@@ -194,6 +197,19 @@ def create_pdf(entries, values_dict):
 
     c.save()
     return buffer.getvalue()
+
+
+# -------------------------------
+# Session State initialisieren
+# -------------------------------
+if "entries" not in st.session_state:
+    st.session_state.entries = []
+
+if "values_dict" not in st.session_state:
+    st.session_state.values_dict = {}
+
+if "page" not in st.session_state:
+    st.session_state.page = 1
 
 
 # -------------------------------
@@ -219,20 +235,11 @@ if uploaded_files:
             "Die Verarbeitung kann auf Streamlit Cloud je nach Dateigröße länger dauern."
         )
 
-    if "entries" not in st.session_state:
-        st.session_state.entries = []
-
-    if "processed_filenames" not in st.session_state:
-        st.session_state.processed_filenames = set()
-
-    if "values_dict" not in st.session_state:
-        st.session_state.values_dict = {}
-
     if st.button("PDFs verarbeiten"):
 
         st.session_state.entries = []
-        st.session_state.processed_filenames = set()
         st.session_state.values_dict = {}
+        st.session_state.page = 1
 
         progress = st.progress(0)
         status = st.empty()
@@ -248,7 +255,6 @@ if uploaded_files:
 
                 if result:
                     st.session_state.entries.append(result)
-                    st.session_state.processed_filenames.add(file.name)
 
                     if file.name not in st.session_state.values_dict:
                         st.session_state.values_dict[file.name] = "Andere"
@@ -263,115 +269,166 @@ if uploaded_files:
 
         status.success("Verarbeitung abgeschlossen.")
 
-    entries = st.session_state.entries
 
-    if entries:
+# -------------------------------
+# Einträge anzeigen
+# -------------------------------
+entries = st.session_state.entries
 
-        st.subheader("Einträge prüfen")
+if entries:
 
-        total_entries = len(entries)
-        total_pages = math.ceil(total_entries / ITEMS_PER_PAGE)
+    st.subheader("Einträge prüfen")
 
-        page = st.number_input(
-            "Seite",
-            min_value=1,
-            max_value=total_pages,
-            value=1,
-            step=1
+    total_entries = len(entries)
+    total_pages = math.ceil(total_entries / ITEMS_PER_PAGE)
+
+    if st.session_state.page > total_pages:
+        st.session_state.page = total_pages
+
+    start_idx = (st.session_state.page - 1) * ITEMS_PER_PAGE
+    end_idx = min(start_idx + ITEMS_PER_PAGE, total_entries)
+
+    current_entries = entries[start_idx:end_idx]
+
+    st.write(
+        f"Zeige Einträge {start_idx + 1} bis {end_idx} "
+        f"von {total_entries}"
+    )
+
+    for i, entry in enumerate(current_entries, start=start_idx):
+
+        st.write(f"**Eintrag {i + 1}: {entry['datei']}**")
+
+        if "fehler" in entry:
+            st.error(f"Fehler beim Verarbeiten: {entry['fehler']}")
+
+        img_cols = st.columns(4)
+
+        for col, key, label in zip(
+            img_cols,
+            ["normal", "rot180", "rot90r", "rot90l"],
+            ["Normal", "180°", "90° rechts", "90° links"]
+        ):
+            with col:
+                if entry[key] is not None:
+                    st.image(
+                        entry[key],
+                        caption=label,
+                        width="stretch"
+                    )
+                else:
+                    st.warning("kein Bild")
+
+        current_value = st.session_state.values_dict.get(
+            entry["datei"],
+            "Andere"
         )
 
-        start_idx = (page - 1) * ITEMS_PER_PAGE
-        end_idx = min(start_idx + ITEMS_PER_PAGE, total_entries)
-
-        st.write(
-            f"Zeige Einträge {start_idx + 1} bis {end_idx} "
-            f"von {total_entries}"
+        selected_value = st.radio(
+            "Name auswählen",
+            optionen,
+            index=optionen.index(current_value),
+            key=f"radio_{entry['datei']}"
         )
 
-        current_entries = entries[start_idx:end_idx]
+        st.session_state.values_dict[entry["datei"]] = selected_value
 
-        for i, entry in enumerate(current_entries, start=start_idx):
+        st.divider()
 
-            st.write(f"**Eintrag {i + 1}: {entry['datei']}**")
 
-            if "fehler" in entry:
-                st.error(f"Fehler beim Verarbeiten: {entry['fehler']}")
+    # -------------------------------
+    # Seitennavigation unten
+    # -------------------------------
+    st.divider()
 
-            img_cols = st.columns(4)
+    col1, col2, col3 = st.columns([1, 2, 1])
 
-            for col, key, label in zip(
-                img_cols,
-                ["normal", "rot180", "rot90r", "rot90l"],
-                ["Normal", "180°", "90° rechts", "90° links"]
-            ):
-                with col:
-                    if entry[key] is not None:
-                        st.image(
-                            entry[key],
-                            caption=label,
-                            width="stretch"
-                        )
-                    else:
-                        st.warning("kein Bild")
+    with col1:
+        if st.session_state.page > 1:
+            if st.button("⬅ Vorherige Seite"):
+                st.session_state.page -= 1
+                st.rerun()
 
-            current_value = st.session_state.values_dict.get(
-                entry["datei"],
-                "Andere"
-            )
+    with col2:
+        st.markdown(
+            f"<div style='text-align:center; font-weight:bold;'>"
+            f"Seite {st.session_state.page} von {total_pages}"
+            f"</div>",
+            unsafe_allow_html=True
+        )
 
-            selected_value = st.radio(
-                "Name auswählen",
-                optionen,
-                index=optionen.index(current_value),
-                key=f"radio_{entry['datei']}"
-            )
+    with col3:
+        if st.session_state.page < total_pages:
+            if st.button("Nächste Seite ➡"):
+                st.session_state.page += 1
+                st.rerun()
 
-            st.session_state.values_dict[entry["datei"]] = selected_value
 
-            st.divider()
+    # -------------------------------
+    # Auswertung
+    # -------------------------------
+    st.divider()
+    st.subheader("Auswertung")
 
-        st.subheader("Auswertung")
+    if st.session_state.page == total_pages:
+        st.success("Letzte Seite erreicht. Die Auswertung kann nun gestartet werden.")
 
-        if st.button("Auswertung starten"):
+        auswertung = st.button("Auswertung starten")
 
-            values = [
-                st.session_state.values_dict.get(entry["datei"], "Andere")
-                for entry in entries
-            ]
+    else:
+        st.info(
+            f"Die Auswertung wird freigeschaltet, "
+            f"sobald die letzte Seite ({total_pages}) erreicht ist."
+        )
 
-            counts = Counter(values)
+        auswertung = st.button(
+            "Auswertung starten",
+            disabled=True
+        )
 
-            df = pd.DataFrame(
-                counts.items(),
-                columns=["Name", "Häufigkeit"]
-            )
+    if auswertung:
 
-            df = df.sort_values(
-                by="Häufigkeit",
-                ascending=False
-            )
+        values = [
+            st.session_state.values_dict.get(entry["datei"], "Andere")
+            for entry in entries
+        ]
 
-            st.subheader("Häufigkeiten")
-            st.dataframe(df, width="stretch")
+        counts = Counter(values)
 
-            pdf_bytes = create_pdf(
-                entries,
-                st.session_state.values_dict
-            )
+        df = pd.DataFrame(
+            counts.items(),
+            columns=["Name", "Häufigkeit"]
+        )
 
-            st.download_button(
-                "PDF herunterladen",
-                pdf_bytes,
-                "auswertung.pdf",
-                mime="application/pdf"
-            )
+        df = df.sort_values(
+            by="Häufigkeit",
+            ascending=False
+        )
 
-            st.download_button(
-                "CSV herunterladen",
-                df.to_csv(index=False).encode("utf-8"),
-                "auswertung.csv",
-                mime="text/csv"
-            )
+        st.subheader("Häufigkeiten")
+        st.dataframe(df, width="stretch")
 
-    elif st.session_state.get("entries") == []:
-        st.info("Bitte PDFs hochladen und anschließend auf „PDFs verarbeiten“ klicken.")
+        pdf_bytes = create_pdf(
+            entries,
+            st.session_state.values_dict
+        )
+
+        st.download_button(
+            "PDF herunterladen",
+            pdf_bytes,
+            "auswertung.pdf",
+            mime="application/pdf"
+        )
+
+        st.download_button(
+            "CSV herunterladen",
+            df.to_csv(index=False).encode("utf-8"),
+            "auswertung.csv",
+            mime="text/csv"
+        )
+
+else:
+    if uploaded_files:
+        st.info("Bitte auf „PDFs verarbeiten“ klicken.")
+    else:
+        st.info("Bitte PDFs hochladen.")
